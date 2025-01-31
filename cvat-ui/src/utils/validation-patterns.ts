@@ -1,4 +1,5 @@
-// Copyright (C) 2020 Intel Corporation
+// Copyright (C) 2021-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
@@ -29,8 +30,8 @@ const validationPatterns = {
     },
 
     validateUsernameCharacters: {
-        pattern: /^[a-zA-Z0-9_-]{5,}$/,
-        message: 'Only characters (a-z), (A-Z), (0-9), -, _ are available',
+        pattern: /^[a-zA-Z0-9_\-.]{5,}$/,
+        message: 'Only characters (a-z), (A-Z), (0-9), -, _, . are available',
     },
 
     /*
@@ -66,14 +67,18 @@ const validationPatterns = {
 
     validateURL: {
         // eslint-disable-next-line
-        pattern: /^((https?:\/\/)|(git@))[^\s$.?#].[^\s]*$/, // url, ssh url, ip
+        pattern: /^(https?:\/\/)[^\s$.?#].[^\s]*$/, // url, ip
         message: 'URL is not valid',
     },
 
-    validatePath: {
-        // eslint-disable-next-line
-        pattern: /^\[\/?([A-z0-9-_+]+\/)*([A-z0-9]+\.(xml|zip|json))\]$/,
-        message: 'Git path is not valid',
+    validateOrganizationSlug: {
+        pattern: /^[a-zA-Z\d]+$/,
+        message: 'Only Latin characters and numbers are allowed',
+    },
+
+    validatePhoneNumber: {
+        pattern: /^[+]*[-\s0-9]*$/g,
+        message: 'Input phone number is not correct',
     },
 };
 

@@ -1,5 +1,4 @@
 {
-    "eslint.enable": true,
     "eslint.probe": [
         "javascript",
         "typescript",
@@ -19,10 +18,33 @@
         }
     ],
     "npm.exclude": "**/.env/**",
-    "python.linting.enabled": true,
-    "python.linting.pylintEnabled": true,
-    "python.linting.pycodestyleEnabled": false,
-    "licenser.license": "Custom",
-    "licenser.customHeader": "Copyright (C) @YEAR@ Intel Corporation\n\nSPDX-License-Identifier: MIT",
-    "files.trimTrailingWhitespace": true
+    "files.trimTrailingWhitespace": true,
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "driver": "SQLite",
+            "name": "cvat",
+            "database": "${workspaceFolder:cvat}/db.sqlite3"
+        }
+    ],
+    "python.analysis.exclude": [
+        // VS Code defaults
+        "**/node_modules",
+        "**/__pycache__",
+        ".git",
+
+        "cvat-cli/build",
+        "cvat-sdk/build",
+    ],
+    "python.defaultInterpreterPath": "${workspaceFolder}/.env/",
+    "python.testing.pytestArgs": [
+        "--rootdir","${workspaceFolder}/tests/"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestPath": "${workspaceFolder}/.env/bin/pytest",
+    "python.testing.cwd": "${workspaceFolder}/tests",
+    "cSpell.words": [
+        "crowdsourcing"
+    ]
 }

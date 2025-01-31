@@ -1,4 +1,5 @@
-// Copyright (C) 2020-2021 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
@@ -8,30 +9,30 @@ import Button from 'antd/lib/button';
 import InputNumber from 'antd/lib/input-number';
 import Radio, { RadioChangeEvent } from 'antd/lib/radio';
 import Text from 'antd/lib/typography/Text';
-import { Canvas, RectDrawingMethod, CuboidDrawingMethod } from 'cvat-canvas-wrapper';
-import { Canvas3d } from 'cvat-canvas3d-wrapper';
+import { RectDrawingMethod, CuboidDrawingMethod } from 'cvat-canvas-wrapper';
 
-import { ShapeType } from 'reducers/interfaces';
+import { ShapeType } from 'reducers';
 import { clamp } from 'utils/math';
 import LabelSelector from 'components/label-selector/label-selector';
 import CVATTooltip from 'components/common/cvat-tooltip';
+import { Label, DimensionType } from 'cvat-core-wrapper';
 
 interface Props {
-    canvasInstance: Canvas | Canvas3d;
     shapeType: ShapeType;
     labels: any[];
     minimumPoints: number;
     rectDrawingMethod?: RectDrawingMethod;
     cuboidDrawingMethod?: CuboidDrawingMethod;
     numberOfPoints?: number;
-    selectedLabelID: number;
+    selectedLabelID: number | null;
     repeatShapeShortcut: string;
-    onChangeLabel(value: string): void;
+    onChangeLabel(value: Label | null): void;
     onChangePoints(value: number | undefined): void;
     onChangeRectDrawingMethod(event: RadioChangeEvent): void;
     onChangeCuboidDrawingMethod(event: RadioChangeEvent): void;
     onDrawTrack(): void;
     onDrawShape(): void;
+    jobInstance: any;
 }
 
 function DrawShapePopoverComponent(props: Props): JSX.Element {
@@ -50,11 +51,10 @@ function DrawShapePopoverComponent(props: Props): JSX.Element {
         onChangePoints,
         onChangeRectDrawingMethod,
         onChangeCuboidDrawingMethod,
-        canvasInstance,
+        jobInstance,
     } = props;
 
-    const is2D = canvasInstance instanceof Canvas;
-
+    const is2D = jobInstance.dimension === DimensionType.DIMENSION_2D;
     return (
         <div className='cvat-draw-shape-popover-content'>
             <Row justify='start'>
@@ -127,7 +127,7 @@ function DrawShapePopoverComponent(props: Props): JSX.Element {
                     </Row>
                 </>
             )}
-            {is2D && shapeType !== ShapeType.RECTANGLE && shapeType !== ShapeType.CUBOID && (
+            {is2D && [ShapeType.POLYGON, ShapeType.POLYLINE, ShapeType.POINTS].includes(shapeType) ? (
                 <Row justify='space-around' align='middle'>
                     <Col span={14}>
                         <Text className='cvat-text-color'> Number of points: </Text>
@@ -148,20 +148,23 @@ function DrawShapePopoverComponent(props: Props): JSX.Element {
                         />
                     </Col>
                 </Row>
-            )}
+            ) : null}
             <Row justify='space-around'>
-                <Col span={12}>
+                <Col span={24}>
                     <CVATTooltip title={`Press ${repeatShapeShortcut} to draw again`}>
-                        <Button onClick={onDrawShape}>Shape</Button>
+                        <Button className={`cvat-draw-${shapeType}-shape-button`} onClick={onDrawShape}>Shape</Button>
                     </CVATTooltip>
-                </Col>
-                {is2D && (
-                    <Col span={12}>
+                    {shapeType !== ShapeType.MASK && (
                         <CVATTooltip title={`Press ${repeatShapeShortcut} to draw again`}>
-                            <Button onClick={onDrawTrack}>Track</Button>
+                            <Button
+                                className={`cvat-draw-${shapeType}-track-button`}
+                                onClick={onDrawTrack}
+                            >
+                                Track
+                            </Button>
                         </CVATTooltip>
-                    </Col>
-                )}
+                    )}
+                </Col>
             </Row>
         </div>
     );

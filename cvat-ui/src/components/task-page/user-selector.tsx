@@ -1,4 +1,5 @@
-// Copyright (C) 2020 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
@@ -8,17 +9,14 @@ import Autocomplete from 'antd/lib/auto-complete';
 import Input from 'antd/lib/input';
 import debounce from 'lodash/debounce';
 
-import getCore from 'cvat-core-wrapper';
+import { User, getCore } from 'cvat-core-wrapper';
+import { getCVATStore } from 'cvat-store';
 
 const core = getCore();
 
-export interface User {
-    id: number;
-    username: string;
-}
-
 interface Props {
     value: User | null;
+    username?: string;
     className?: string;
     onSelect: (user: User | null) => void;
 }
@@ -29,28 +27,62 @@ const searchUsers = debounce(
             .get({
                 search: searchValue,
                 limit: 10,
+                is_active: true,
             })
             .then((result: User[]) => {
                 if (result) {
                     setUsers(result);
                 }
             });
-    },
-    250,
-    {
-        maxWait: 750,
-    },
+    }, 500,
 );
 
+const initialUsersStorage: {
+    storage: Record<string, {
+        promise: Promise<User[]>,
+        timestamp: number,
+    }>,
+    get(userID?: number, organizationSlug?: string): Promise<User[]>;
+} = {
+    storage: {},
+    get(userID?: number, organizationSlug?: string): Promise<User[]> {
+        if (typeof userID === 'undefined') {
+            return Promise.resolve([]);
+        }
+
+        const key = `${userID}_${organizationSlug || ''}`;
+        const RELOAD_INITIAL_USERS_AFTER_MS = 300000;
+        if (key in this.storage && (Date.now() - this.storage[key].timestamp) < RELOAD_INITIAL_USERS_AFTER_MS) {
+            return this.storage[key].promise;
+        }
+
+        this.storage[key] = {
+            promise: core.users.get({ limit: 10, is_active: true }),
+            timestamp: Date.now(),
+        };
+
+        this.storage[key].promise.catch(() => {
+            delete this.storage[key];
+        });
+
+        return this.storage[key].promise;
+    },
+};
+
 export default function UserSelector(props: Props): JSX.Element {
-    const { value, className, onSelect } = props;
-    const [searchPhrase, setSearchPhrase] = useState('');
+    const {
+        value, className, username, onSelect,
+    } = props;
+    const [searchPhrase, setSearchPhrase] = useState(username || '');
     const [initialUsers, setInitialUsers] = useState<User[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const autocompleteRef = useRef<RefSelectProps | null>(null);
 
     useEffect(() => {
-        core.users.get({ limit: 10 }).then((result: User[]) => {
+        const state = getCVATStore().getState();
+        const userID = state.auth.user?.id;
+        const organizationSlug = state.organizations.current?.slug;
+        initialUsersStorage.get(userID, organizationSlug).then((result: User[]) => {
             if (result) {
                 setInitialUsers(result);
             }
@@ -69,10 +101,6 @@ export default function UserSelector(props: Props): JSX.Element {
         }
     }, [searchPhrase]);
 
-    const handleSearch = (searchValue: string): void => {
-        setSearchPhrase(searchValue);
-    };
-
     const onBlur = (): void => {
         if (!searchPhrase && value) {
             onSelect(null);
@@ -80,7 +108,9 @@ export default function UserSelector(props: Props): JSX.Element {
             const potentialUsers = users.filter((_user) => _user.username.includes(searchPhrase));
             if (potentialUsers.length === 1) {
                 setSearchPhrase(potentialUsers[0].username);
-                onSelect(potentialUsers[0]);
+                if (value?.id !== potentialUsers[0].id) {
+                    onSelect(potentialUsers[0]);
+                }
             } else {
                 setSearchPhrase(value?.username || '');
             }
@@ -88,7 +118,6 @@ export default function UserSelector(props: Props): JSX.Element {
     };
 
     const handleSelect = (_value: SelectValue): void => {
-        setSearchPhrase(users.filter((user) => user.id === +_value)[0].username);
         const user = _value ? users.filter((_user) => _user.id === +_value)[0] : null;
         if ((user?.id || null) !== (value?.id || null)) {
             onSelect(user);
@@ -100,7 +129,9 @@ export default function UserSelector(props: Props): JSX.Element {
             if (!users.filter((user) => user.id === value.id).length) {
                 core.users.get({ id: value.id }).then((result: User[]) => {
                     const [user] = result;
-                    setUsers([...users, user]);
+                    if (user) {
+                        setUsers([...users, user]);
+                    }
                 });
             }
 
@@ -114,10 +145,11 @@ export default function UserSelector(props: Props): JSX.Element {
             ref={autocompleteRef}
             value={searchPhrase}
             placeholder='Select a user'
-            onSearch={handleSearch}
+            onSearch={setSearchPhrase}
             onSelect={handleSelect}
             onBlur={onBlur}
             className={combinedClassName}
+            popupClassName='cvat-user-search-dropdown'
             options={users.map((user) => ({
                 value: user.id.toString(),
                 label: user.username,

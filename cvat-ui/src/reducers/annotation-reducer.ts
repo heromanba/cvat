@@ -1,24 +1,45 @@
-// Copyright (C) 2020-2021 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
-import React from 'react';
 import { AnyAction } from 'redux';
 import { AnnotationActionTypes } from 'actions/annotation-actions';
+import { JobsActionTypes } from 'actions/jobs-actions';
 import { AuthActionTypes } from 'actions/auth-actions';
 import { BoundariesActionTypes } from 'actions/boundaries-actions';
 import { Canvas, CanvasMode } from 'cvat-canvas-wrapper';
 import { Canvas3d } from 'cvat-canvas3d-wrapper';
 import {
+    DimensionType, JobStage, Label, LabelType,
+} from 'cvat-core-wrapper';
+import { clamp } from 'utils/math';
+
+import {
     ActiveControl,
     AnnotationState,
     ContextMenuType,
-    DimensionType,
+    NavigationType,
     ObjectType,
     ShapeType,
-    TaskStatus,
     Workspace,
-} from './interfaces';
+} from '.';
+
+function updateActivatedStateID(newStates: any[], prevActivatedStateID: number | null): number | null {
+    return prevActivatedStateID === null || newStates.some((_state: any) => _state.clientID === prevActivatedStateID) ?
+        prevActivatedStateID :
+        null;
+}
+
+export function labelShapeType(label?: Label): ShapeType | null {
+    if (label && Object.values(ShapeType).includes(label.type as any)) {
+        return label.type as unknown as ShapeType;
+    }
+    if (label?.type === LabelType.TAG) {
+        return null;
+    }
+    return ShapeType.RECTANGLE;
+}
 
 const defaultState: AnnotationState = {
     activities: {
@@ -32,16 +53,35 @@ const defaultState: AnnotationState = {
             type: ContextMenuType.CANVAS_SHAPE,
             pointID: null,
             clientID: null,
+            parentID: null,
         },
-        instance: new Canvas(),
+        brushTools: {
+            visible: false,
+            top: 0,
+            left: 0,
+        },
+        instance: null,
         ready: false,
         activeControl: ActiveControl.CURSOR,
+        activeObjectHidden: false,
     },
     job: {
         openTime: null,
         labels: [],
         requestedId: null,
+        queryParameters: {
+            initialOpenGuide: false,
+            defaultLabel: null,
+            defaultPointsCount: null,
+        },
+        groundTruthInfo: {
+            validationLayout: null,
+            groundTruthJobFramesMeta: null,
+            groundTruthInstance: null,
+        },
+        frameNumbers: [],
         instance: null,
+        meta: null,
         attributes: {},
         fetching: false,
         saving: false,
@@ -51,38 +91,41 @@ const defaultState: AnnotationState = {
             number: 0,
             filename: '',
             data: null,
-            hasRelatedContext: false,
+            relatedFiles: 0,
             fetching: false,
             delay: 0,
             changeTime: null,
+            changeFrameEvent: null,
         },
+        navigationType: NavigationType.REGULAR,
+        ranges: '',
         playing: false,
         frameAngles: [],
-        contextImage: {
-            fetching: false,
-            data: null,
-            hidden: false,
-        },
+        navigationBlocked: false,
     },
     drawing: {
         activeShapeType: ShapeType.RECTANGLE,
-        activeLabelID: 0,
+        activeLabelID: null,
         activeObjectType: ObjectType.SHAPE,
     },
+    editing: {
+        objectState: null,
+    },
     annotations: {
-        selectedStatesID: [],
         activatedStateID: null,
+        activatedElementID: null,
         activatedAttributeID: null,
+        highlightedConflict: null,
         saving: {
             forceExit: false,
             uploading: false,
-            statuses: [],
         },
         collapsed: {},
         collapsedAll: true,
         states: [],
         filters: [],
         resetGroupFlag: false,
+        initialized: false,
         history: {
             undo: [],
             redo: [],
@@ -93,35 +136,22 @@ const defaultState: AnnotationState = {
             cur: 0,
         },
     },
-    propagate: {
+    remove: {
         objectState: null,
-        frames: 50,
+        force: false,
     },
     statistics: {
         visible: false,
         collecting: false,
         data: null,
     },
-    aiToolsRef: React.createRef(),
+    propagate: {
+        visible: false,
+    },
     colors: [],
     sidebarCollapsed: false,
     appearanceCollapsed: false,
     filtersPanelVisible: false,
-    requestReviewDialogVisible: false,
-    submitReviewDialogVisible: false,
-    tabContentHeight: 0,
-    predictor: {
-        enabled: false,
-        error: null,
-        message: '',
-        projectScore: 0,
-        fetching: false,
-        annotatedFrames: [],
-        timeRemaining: 0,
-        progress: 0,
-        annotationAmount: 0,
-        mediaAmount: 0,
-    },
     workspace: Workspace.STANDARD,
 };
 
@@ -136,54 +166,89 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                     requestedId: action.payload.requestedId,
                     fetching: true,
                 },
+                annotations: {
+                    ...state.annotations,
+                    initialized: false,
+                },
             };
         }
         case BoundariesActionTypes.RESET_AFTER_ERROR:
         case AnnotationActionTypes.GET_JOB_SUCCESS: {
             const {
                 job,
-                states,
+                jobMeta,
                 openTime,
+                frameNumbers,
                 frameNumber: number,
                 frameFilename: filename,
-                frameHasRelatedContext,
+                relatedFiles,
                 colors,
                 filters,
                 frameData: data,
-                minZ,
-                maxZ,
+                queryParameters,
+                groundTruthInstance,
+                groundTruthJobFramesMeta,
+                validationLayout,
             } = action.payload;
 
-            const isReview = job.status === TaskStatus.REVIEW;
-            let workspaceSelected = Workspace.STANDARD;
-
-            if (job.task.dimension === DimensionType.DIM_3D) {
-                workspaceSelected = Workspace.STANDARD3D;
+            const defaultLabel = job.labels.length ? job.labels[0] : null;
+            const isReview = job.stage === JobStage.VALIDATION;
+            let workspaceSelected = null;
+            let activeObjectType;
+            let activeShapeType = null;
+            if (defaultLabel?.type === LabelType.TAG) {
+                activeObjectType = ObjectType.TAG;
+            } else {
+                activeShapeType = labelShapeType(defaultLabel);
+                activeObjectType = job.mode === 'interpolation' ? ObjectType.TRACK : ObjectType.SHAPE;
             }
+
+            if (job.dimension === DimensionType.DIMENSION_2D) {
+                if (queryParameters.initialWorkspace !== Workspace.STANDARD3D) {
+                    workspaceSelected = queryParameters.initialWorkspace;
+                }
+                workspaceSelected = workspaceSelected || (isReview ? Workspace.REVIEW : Workspace.STANDARD);
+            } else {
+                workspaceSelected = Workspace.STANDARD3D;
+                activeShapeType = ShapeType.CUBOID;
+            }
+
+            if (state.canvas.instance) {
+                state.canvas.instance.destroy();
+            }
+
             return {
                 ...state,
                 job: {
                     ...state.job,
                     openTime,
+                    frameNumbers,
                     fetching: false,
                     instance: job,
-                    labels: job.task.labels,
-                    attributes: job.task.labels.reduce((acc: Record<number, any[]>, label: any): Record<
-                    number,
-                    any[]
-                    > => {
-                        acc[label.id] = label.attributes;
-                        return acc;
-                    }, {}),
+                    meta: jobMeta,
+                    labels: job.labels,
+                    attributes: job.labels
+                        .reduce((acc: Record<number, any[]>, label: any): Record<number, any[]> => {
+                            acc[label.id] = label.attributes;
+                            return acc;
+                        }, {}),
+                    groundTruthInfo: {
+                        validationLayout,
+                        groundTruthInstance,
+                        groundTruthJobFramesMeta,
+                    },
+                    queryParameters: {
+                        initialOpenGuide: queryParameters.initialOpenGuide,
+                        defaultLabel: queryParameters.defaultLabel,
+                        defaultPointsCount: queryParameters.defaultPointsCount,
+                    },
                 },
                 annotations: {
                     ...state.annotations,
-                    states,
                     filters,
                     zLayer: {
-                        min: minZ,
-                        max: maxZ,
-                        cur: maxZ,
+                        ...state.annotations.zLayer,
+                        cur: Number.MAX_SAFE_INTEGER,
                     },
                 },
                 player: {
@@ -191,7 +256,7 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                     frame: {
                         ...state.player.frame,
                         filename,
-                        hasRelatedContext: frameHasRelatedContext,
+                        relatedFiles,
                         number,
                         data,
                     },
@@ -199,15 +264,17 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                 },
                 drawing: {
                     ...state.drawing,
-                    activeLabelID: job.task.labels.length ? job.task.labels[0].id : null,
-                    activeObjectType: job.task.mode === 'interpolation' ? ObjectType.TRACK : ObjectType.SHAPE,
+                    activeLabelID: defaultLabel ? defaultLabel.id : null,
+                    activeObjectType,
+                    activeShapeType,
                 },
                 canvas: {
                     ...state.canvas,
-                    instance: job.task.dimension === DimensionType.DIM_2D ? new Canvas() : new Canvas3d(),
+                    instance: job.dimension === DimensionType.DIMENSION_2D ? new Canvas() : new Canvas3d(),
                 },
                 colors,
-                workspace: isReview ? Workspace.REVIEW_WORKSPACE : workspaceSelected,
+                workspace: isReview && job.dimension === DimensionType.DIMENSION_2D ?
+                    Workspace.REVIEW : workspaceSelected,
             };
         }
         case AnnotationActionTypes.GET_JOB_FAILED: {
@@ -217,6 +284,15 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                     ...state.job,
                     instance: undefined,
                     fetching: false,
+                },
+            };
+        }
+        case JobsActionTypes.UPDATE_JOB_SUCCESS: {
+            return {
+                ...state,
+                job: {
+                    ...state.job,
+                    instance: action.payload.job,
                 },
             };
         }
@@ -249,24 +325,21 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
             };
         }
         case AnnotationActionTypes.CHANGE_FRAME_SUCCESS: {
+            const { activatedStateID } = state.annotations;
             const {
                 number,
                 data,
                 filename,
-                hasRelatedContext,
+                relatedFiles,
                 states,
+                history,
                 minZ,
                 maxZ,
                 curZ,
                 delay,
                 changeTime,
+                changeFrameEvent,
             } = action.payload;
-
-            const activatedStateID = states
-                .map((_state: any) => _state.clientID)
-                .includes(state.annotations.activatedStateID) ?
-                state.annotations.activatedStateID :
-                null;
 
             return {
                 ...state,
@@ -275,21 +348,20 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                     frame: {
                         data,
                         filename,
-                        hasRelatedContext,
+                        relatedFiles,
                         number,
                         fetching: false,
                         changeTime,
                         delay,
-                    },
-                    contextImage: {
-                        ...state.player.contextImage,
-                        data: null,
+                        changeFrameEvent,
                     },
                 },
                 annotations: {
                     ...state.annotations,
-                    activatedStateID,
+                    activatedStateID: updateActivatedStateID(states, activatedStateID),
+                    highlightedConflict: null,
                     states,
+                    history,
                     zLayer: {
                         min: minZ,
                         max: maxZ,
@@ -306,6 +378,7 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                     frame: {
                         ...state.player.frame,
                         fetching: false,
+                        changeFrameEvent: null,
                     },
                 },
             };
@@ -333,18 +406,15 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                     saving: {
                         ...state.annotations.saving,
                         uploading: true,
-                        statuses: [],
                     },
                 },
             };
         }
         case AnnotationActionTypes.SAVE_ANNOTATIONS_SUCCESS: {
-            const { states } = action.payload;
             return {
                 ...state,
                 annotations: {
                     ...state.annotations,
-                    states,
                     saving: {
                         ...state.annotations.saving,
                         uploading: false,
@@ -360,20 +430,6 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                     saving: {
                         ...state.annotations.saving,
                         uploading: false,
-                    },
-                },
-            };
-        }
-        case AnnotationActionTypes.SAVE_UPDATE_ANNOTATIONS_STATUS: {
-            const { status } = action.payload;
-
-            return {
-                ...state,
-                annotations: {
-                    ...state.annotations,
-                    saving: {
-                        ...state.annotations.saving,
-                        statuses: [...state.annotations.saving.statuses, status],
                     },
                 },
             };
@@ -401,13 +457,6 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                 appearanceCollapsed: !state.appearanceCollapsed,
             };
         }
-        case AnnotationActionTypes.UPDATE_TAB_CONTENT_HEIGHT: {
-            const { tabContentHeight } = action.payload;
-            return {
-                ...state,
-                tabContentHeight,
-            };
-        }
         case AnnotationActionTypes.COLLAPSE_OBJECT_ITEMS: {
             const { states, collapsed } = action.payload;
 
@@ -415,6 +464,9 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
             const totalStatesCount = state.annotations.states.length;
             for (const objectState of states) {
                 updatedCollapsedStates[objectState.clientID] = collapsed;
+                for (const element of objectState.elements) {
+                    updatedCollapsedStates[element.clientID] = collapsed;
+                }
             }
 
             return {
@@ -427,62 +479,44 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
             };
         }
         case AnnotationActionTypes.CONFIRM_CANVAS_READY: {
+            const { ranges } = action.payload;
             return {
                 ...state,
+                player: {
+                    ...state.player,
+                    ranges: ranges || state.player.ranges,
+                    frame: {
+                        ...state.player.frame,
+                        changeFrameEvent: null,
+                    },
+                },
                 canvas: {
                     ...state.canvas,
                     ready: true,
                 },
             };
         }
-        case AnnotationActionTypes.DRAG_CANVAS: {
-            const { enabled } = action.payload;
-            const activeControl = enabled ? ActiveControl.DRAG_CANVAS : ActiveControl.CURSOR;
-
-            return {
-                ...state,
-                annotations: {
-                    ...state.annotations,
-                    activatedStateID: null,
-                },
-                canvas: {
-                    ...state.canvas,
-                    activeControl,
-                },
-            };
-        }
-        case AnnotationActionTypes.ZOOM_CANVAS: {
-            const { enabled } = action.payload;
-            const activeControl = enabled ? ActiveControl.ZOOM_CANVAS : ActiveControl.CURSOR;
-
-            return {
-                ...state,
-                annotations: {
-                    ...state.annotations,
-                    activatedStateID: null,
-                },
-                canvas: {
-                    ...state.canvas,
-                    activeControl,
-                },
-            };
-        }
-        case AnnotationActionTypes.REMEMBER_CREATED_OBJECT: {
+        case AnnotationActionTypes.REMEMBER_OBJECT: {
             const { payload } = action;
 
             let { activeControl } = state.canvas;
-            if (payload.activeShapeType === ShapeType.RECTANGLE) {
-                activeControl = ActiveControl.DRAW_RECTANGLE;
-            } else if (payload.activeShapeType === ShapeType.POLYGON) {
-                activeControl = ActiveControl.DRAW_POLYGON;
-            } else if (payload.activeShapeType === ShapeType.POLYLINE) {
-                activeControl = ActiveControl.DRAW_POLYLINE;
-            } else if (payload.activeShapeType === ShapeType.POINTS) {
-                activeControl = ActiveControl.DRAW_POINTS;
-            } else if (payload.activeShapeType === ShapeType.CUBOID) {
-                activeControl = ActiveControl.DRAW_CUBOID;
-            } else if (payload.activeObjectType === ObjectType.TAG) {
-                activeControl = ActiveControl.CURSOR;
+            if (payload.updateCurrentControl) {
+                if ('activeObjectType' in payload && payload.activeObjectType === ObjectType.TAG) {
+                    activeControl = ActiveControl.CURSOR;
+                } else if ('activeShapeType' in payload) {
+                    const controlMapping = {
+                        [ShapeType.RECTANGLE]: ActiveControl.DRAW_RECTANGLE,
+                        [ShapeType.POLYGON]: ActiveControl.DRAW_POLYGON,
+                        [ShapeType.POLYLINE]: ActiveControl.DRAW_POLYLINE,
+                        [ShapeType.POINTS]: ActiveControl.DRAW_POINTS,
+                        [ShapeType.ELLIPSE]: ActiveControl.DRAW_ELLIPSE,
+                        [ShapeType.CUBOID]: ActiveControl.DRAW_CUBOID,
+                        [ShapeType.SKELETON]: ActiveControl.DRAW_SKELETON,
+                        [ShapeType.MASK]: ActiveControl.DRAW_MASK,
+                    };
+
+                    activeControl = controlMapping[payload.activeShapeType as ShapeType];
+                }
             }
 
             return {
@@ -496,9 +530,8 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                     activeControl,
                 },
                 drawing: {
-                    ...state.drawing,
+                    ...defaultState.drawing,
                     ...payload,
-                    activeInteractor: undefined,
                 },
             };
         }
@@ -517,9 +550,8 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                 },
             };
         }
-        case AnnotationActionTypes.SELECT_ISSUE_POSITION: {
-            const { enabled } = action.payload;
-            const activeControl = enabled ? ActiveControl.OPEN_ISSUE : ActiveControl.CURSOR;
+        case AnnotationActionTypes.UPDATE_ACTIVE_CONTROL: {
+            const { activeControl } = action.payload;
 
             return {
                 ...state,
@@ -530,63 +562,9 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                 canvas: {
                     ...state.canvas,
                     activeControl,
-                },
-            };
-        }
-        case AnnotationActionTypes.MERGE_OBJECTS: {
-            const { enabled } = action.payload;
-            const activeControl = enabled ? ActiveControl.MERGE : ActiveControl.CURSOR;
-
-            return {
-                ...state,
-                annotations: {
-                    ...state.annotations,
-                    activatedStateID: null,
-                },
-                canvas: {
-                    ...state.canvas,
-                    activeControl,
-                },
-            };
-        }
-        case AnnotationActionTypes.GROUP_OBJECTS: {
-            const { enabled } = action.payload;
-            const activeControl = enabled ? ActiveControl.GROUP : ActiveControl.CURSOR;
-
-            return {
-                ...state,
-                annotations: {
-                    ...state.annotations,
-                    activatedStateID: null,
-                },
-                canvas: {
-                    ...state.canvas,
-                    activeControl,
-                },
-            };
-        }
-        case AnnotationActionTypes.SPLIT_TRACK: {
-            const { enabled } = action.payload;
-            const activeControl = enabled ? ActiveControl.SPLIT : ActiveControl.CURSOR;
-
-            return {
-                ...state,
-                annotations: {
-                    ...state.annotations,
-                    activatedStateID: null,
-                },
-                canvas: {
-                    ...state.canvas,
-                    activeControl,
-                },
-            };
-        }
-        case AnnotationActionTypes.SHAPE_DRAWN: {
-            return {
-                ...state,
-                canvas: {
-                    ...state.canvas,
-                    activeControl: ActiveControl.CURSOR,
+                    contextMenu: {
+                        ...defaultState.canvas.contextMenu,
+                    },
                 },
             };
         }
@@ -615,43 +593,9 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                     zLayer: {
                         min: minZLayer,
                         max: maxZLayer,
-                        cur: maxZLayer,
+                        cur: clamp(state.annotations.zLayer.cur, minZLayer, maxZLayer),
                     },
                     states: nextStates,
-                    history,
-                },
-            };
-        }
-        case AnnotationActionTypes.UPDATE_ANNOTATIONS_FAILED: {
-            const { states } = action.payload;
-            return {
-                ...state,
-                annotations: {
-                    ...state.annotations,
-                    states,
-                },
-            };
-        }
-        case AnnotationActionTypes.CREATE_ANNOTATIONS_SUCCESS: {
-            const { states, history } = action.payload;
-
-            return {
-                ...state,
-                annotations: {
-                    ...state.annotations,
-                    states,
-                    history,
-                },
-            };
-        }
-        case AnnotationActionTypes.MERGE_ANNOTATIONS_SUCCESS: {
-            const { states, history } = action.payload;
-
-            return {
-                ...state,
-                annotations: {
-                    ...state.annotations,
-                    states,
                     history,
                 },
             };
@@ -674,38 +618,19 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                 },
             };
         }
-        case AnnotationActionTypes.GROUP_ANNOTATIONS_SUCCESS: {
-            const { states, history } = action.payload;
-
-            return {
-                ...state,
-                annotations: {
-                    ...state.annotations,
-                    states,
-                    history,
-                },
-            };
-        }
-        case AnnotationActionTypes.SPLIT_ANNOTATIONS_SUCCESS: {
-            const { states, history } = action.payload;
-
-            return {
-                ...state,
-                annotations: {
-                    ...state.annotations,
-                    states,
-                    history,
-                },
-            };
-        }
         case AnnotationActionTypes.ACTIVATE_OBJECT: {
-            const { activatedStateID, activatedAttributeID } = action.payload;
-
+            const { activatedStateID, activatedElementID, activatedAttributeID } = action.payload;
             const {
                 canvas: { activeControl, instance },
+                annotations: { highlightedConflict, states },
             } = state;
 
-            if (activeControl !== ActiveControl.CURSOR || instance.mode() !== CanvasMode.IDLE) {
+            const objectDoesNotExist = activatedStateID !== null &&
+                !states.some((_state) => _state.clientID === activatedStateID);
+            const canvasIsNotReady = (instance as Canvas | Canvas3d)
+                .mode() !== CanvasMode.IDLE || activeControl !== ActiveControl.CURSOR;
+
+            if (objectDoesNotExist || canvasIsNotReady || highlightedConflict) {
                 return state;
             }
 
@@ -714,18 +639,39 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                 annotations: {
                     ...state.annotations,
                     activatedStateID,
+                    activatedElementID,
                     activatedAttributeID,
                 },
             };
         }
-        case AnnotationActionTypes.SELECT_OBJECTS: {
-            const { selectedStatesID } = action.payload;
-
+        case AnnotationActionTypes.REMOVE_OBJECT: {
+            const { objectState, force } = action.payload;
             return {
                 ...state,
-                annotations: {
-                    ...state.annotations,
-                    selectedStatesID,
+                remove: {
+                    ...state.remove,
+                    objectState,
+                    force,
+                },
+            };
+        }
+        case AnnotationActionTypes.UPDATE_EDITED_STATE: {
+            const { objectState } = action.payload;
+            return {
+                ...state,
+                editing: {
+                    ...state.editing,
+                    objectState,
+                },
+            };
+        }
+        case AnnotationActionTypes.HIDE_ACTIVE_OBJECT: {
+            const { hide } = action.payload;
+            return {
+                ...state,
+                canvas: {
+                    ...state.canvas,
+                    activeObjectHidden: hide,
                 },
             };
         }
@@ -752,6 +698,19 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                         visible: objectState.clientID === contextMenuClientID ? false : contextMenuVisible,
                     },
                 },
+                remove: {
+                    objectState: null,
+                    force: false,
+                },
+            };
+        }
+        case AnnotationActionTypes.REMOVE_OBJECT_FAILED: {
+            return {
+                ...state,
+                remove: {
+                    objectState: null,
+                    force: false,
+                },
             };
         }
         case AnnotationActionTypes.PASTE_SHAPE: {
@@ -762,6 +721,9 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                 canvas: {
                     ...state.canvas,
                     activeControl,
+                    contextMenu: {
+                        ...defaultState.canvas.contextMenu,
+                    },
                 },
                 annotations: {
                     ...state.annotations,
@@ -780,28 +742,6 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                 },
             };
         }
-        case AnnotationActionTypes.EDIT_SHAPE: {
-            const { enabled } = action.payload;
-            const activeControl = enabled ? ActiveControl.EDIT : ActiveControl.CURSOR;
-
-            return {
-                ...state,
-                canvas: {
-                    ...state.canvas,
-                    activeControl,
-                },
-            };
-        }
-        case AnnotationActionTypes.PROPAGATE_OBJECT: {
-            const { objectState } = action.payload;
-            return {
-                ...state,
-                propagate: {
-                    ...state.propagate,
-                    objectState,
-                },
-            };
-        }
         case AnnotationActionTypes.PROPAGATE_OBJECT_SUCCESS: {
             const { history } = action.payload;
             return {
@@ -810,20 +750,14 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                     ...state.annotations,
                     history,
                 },
-                propagate: {
-                    ...state.propagate,
-                    objectState: null,
-                },
             };
         }
-        case AnnotationActionTypes.CHANGE_PROPAGATE_FRAMES: {
-            const { frames } = action.payload;
-
+        case AnnotationActionTypes.SWITCH_PROPAGATE_VISIBILITY: {
+            const { visible } = action.payload;
             return {
                 ...state,
                 propagate: {
-                    ...state.propagate,
-                    frames,
+                    visible,
                 },
             };
         }
@@ -908,40 +842,27 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
             };
         }
         case AnnotationActionTypes.UPLOAD_JOB_ANNOTATIONS_SUCCESS: {
-            const { states, job, history } = action.payload;
-            const { loads } = state.activities;
-
-            delete loads[job.id];
-
             return {
                 ...state,
-                activities: {
-                    ...state.activities,
-                    loads: {
-                        ...loads,
-                    },
-                },
                 annotations: {
                     ...state.annotations,
-                    history,
-                    states,
-                    selectedStatesID: [],
+                    history: { undo: [], redo: [] },
+                    states: [],
                     activatedStateID: null,
+                    activatedElementID: null,
+                    activatedAttributeID: null,
+                    highlightedConflict: null,
                     collapsed: {},
                 },
             };
         }
         case AnnotationActionTypes.REMOVE_JOB_ANNOTATIONS_SUCCESS: {
-            const { history } = action.payload;
             return {
                 ...state,
                 annotations: {
                     ...state.annotations,
-                    history,
-                    selectedStatesID: [],
                     activatedStateID: null,
                     collapsed: {},
-                    states: [],
                 },
             };
         }
@@ -949,6 +870,8 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
             const {
                 visible, left, top, type, pointID,
             } = action.payload;
+
+            const { activatedElementID, activatedStateID } = state.annotations;
 
             return {
                 ...state,
@@ -961,57 +884,52 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                         top,
                         type,
                         pointID,
-                        clientID: state.annotations.activatedStateID,
+                        clientID: Number.isInteger(activatedElementID) ? activatedElementID : activatedStateID,
+                        parentID: Number.isInteger(activatedElementID) ? activatedStateID : null,
                     },
                 },
             };
         }
-        case AnnotationActionTypes.REDO_ACTION_SUCCESS:
-        case AnnotationActionTypes.UNDO_ACTION_SUCCESS: {
-            const {
-                history, states, minZ, maxZ,
-            } = action.payload;
-
-            const activatedStateID = states
-                .map((_state: any) => _state.clientID)
-                .includes(state.annotations.activatedStateID) ?
-                state.annotations.activatedStateID :
-                null;
-
+        case AnnotationActionTypes.UPDATE_BRUSH_TOOLS_CONFIG: {
             return {
                 ...state,
-                annotations: {
-                    ...state.annotations,
-                    activatedStateID,
-                    states,
-                    history,
-                    zLayer: {
-                        min: minZ,
-                        max: maxZ,
-                        cur: maxZ,
+                canvas: {
+                    ...state.canvas,
+                    brushTools: {
+                        ...state.canvas.brushTools,
+                        ...action.payload,
                     },
                 },
             };
         }
         case AnnotationActionTypes.FETCH_ANNOTATIONS_SUCCESS: {
-            const { states, minZ, maxZ } = action.payload;
-            const activatedStateID = states
-                .map((_state: any) => _state.clientID)
-                .includes(state.annotations.activatedStateID) ?
-                state.annotations.activatedStateID :
-                null;
+            const { activatedStateID } = state.annotations;
+            const {
+                states, history, minZ, maxZ,
+            } = action.payload;
 
             return {
                 ...state,
                 annotations: {
                     ...state.annotations,
-                    activatedStateID,
+                    activatedStateID: updateActivatedStateID(states, activatedStateID),
                     states,
+                    history,
+                    initialized: true,
                     zLayer: {
                         min: minZ,
                         max: maxZ,
-                        cur: maxZ,
+                        cur: clamp(state.annotations.zLayer.cur, minZ, maxZ),
                     },
+                },
+            };
+        }
+        case AnnotationActionTypes.FETCH_ANNOTATIONS_FAILED: {
+            return {
+                ...state,
+                annotations: {
+                    ...state.annotations,
+                    initialized: true,
                 },
             };
         }
@@ -1048,7 +966,7 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                     activatedStateID,
                     zLayer: {
                         ...state.annotations.zLayer,
-                        cur: Math.max(Math.min(cur, max), min),
+                        cur: clamp(cur, min, max),
                     },
                 },
             };
@@ -1068,7 +986,7 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
             };
         }
         case AnnotationActionTypes.INTERACT_WITH_CANVAS: {
-            const { activeInteractor, activeLabelID } = action.payload;
+            const { activeInteractor, activeLabelID, activeInteractorParameters } = action.payload;
             return {
                 ...state,
                 annotations: {
@@ -1078,28 +996,15 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                 drawing: {
                     ...state.drawing,
                     activeInteractor,
+                    activeInteractorParameters,
                     activeLabelID,
                 },
                 canvas: {
                     ...state.canvas,
-                    activeControl: activeInteractor.type.startsWith('opencv') ?
+                    activeControl: activeInteractor.kind.startsWith('opencv') ?
                         ActiveControl.OPENCV_TOOLS :
                         ActiveControl.AI_TOOLS,
                 },
-            };
-        }
-        case AnnotationActionTypes.SWITCH_REQUEST_REVIEW_DIALOG: {
-            const { visible } = action.payload;
-            return {
-                ...state,
-                requestReviewDialogVisible: visible,
-            };
-        }
-        case AnnotationActionTypes.SWITCH_SUBMIT_REVIEW_DIALOG: {
-            const { visible } = action.payload;
-            return {
-                ...state,
-                submitReviewDialogVisible: visible,
             };
         }
         case AnnotationActionTypes.SET_FORCE_EXIT_ANNOTATION_PAGE_FLAG: {
@@ -1117,53 +1022,23 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
         }
         case AnnotationActionTypes.CHANGE_WORKSPACE: {
             const { workspace } = action.payload;
-            if (state.canvas.activeControl !== ActiveControl.CURSOR) {
+            if (state.canvas.activeControl !== ActiveControl.CURSOR && state.workspace !== Workspace.SINGLE_SHAPE) {
                 return state;
             }
 
             return {
                 ...state,
                 workspace,
-            };
-        }
-        case AnnotationActionTypes.UPDATE_PREDICTOR_STATE: {
-            const { payload } = action;
-            return {
-                ...state,
-                predictor: {
-                    ...state.predictor,
-                    ...payload,
-                },
-            };
-        }
-        case AnnotationActionTypes.GET_PREDICTIONS: {
-            return {
-                ...state,
-                predictor: {
-                    ...state.predictor,
-                    fetching: true,
-                },
-            };
-        }
-        case AnnotationActionTypes.GET_PREDICTIONS_SUCCESS: {
-            const { frame } = action.payload;
-            const annotatedFrames = [...state.predictor.annotatedFrames, frame];
+                annotations: {
+                    ...state.annotations,
+                    states: state.annotations.states.filter((_state) => !_state.isGroundTruth),
+                    activatedStateID: null,
+                    activatedAttributeID: null,
 
-            return {
-                ...state,
-                predictor: {
-                    ...state.predictor,
-                    fetching: false,
-                    annotatedFrames,
                 },
-            };
-        }
-        case AnnotationActionTypes.GET_PREDICTIONS_FAILED: {
-            return {
-                ...state,
-                predictor: {
-                    ...state.predictor,
-                    fetching: false,
+                canvas: {
+                    ...state.canvas,
+                    activeControl: ActiveControl.CURSOR,
                 },
             };
         }
@@ -1176,61 +1051,72 @@ export default (state = defaultState, action: AnyAction): AnnotationState => {
                 },
             };
         }
-        case AnnotationActionTypes.HIDE_SHOW_CONTEXT_IMAGE: {
-            const { hidden } = action.payload;
+        case AnnotationActionTypes.SWITCH_NAVIGATION_BLOCKED: {
             return {
                 ...state,
                 player: {
                     ...state.player,
-                    contextImage: {
-                        ...state.player.contextImage,
-                        hidden,
-                    },
+                    navigationBlocked: action.payload.navigationBlocked,
                 },
             };
         }
-        case AnnotationActionTypes.GET_CONTEXT_IMAGE: {
+        case AnnotationActionTypes.SET_NAVIGATION_TYPE: {
             return {
                 ...state,
                 player: {
                     ...state.player,
-                    contextImage: {
-                        ...state.player.contextImage,
-                        fetching: true,
-                    },
+                    navigationType: action.payload.navigationType,
                 },
             };
         }
-        case AnnotationActionTypes.GET_CONTEXT_IMAGE_SUCCESS: {
-            const { contextImageData } = action.payload;
+        case AnnotationActionTypes.DELETE_FRAME_SUCCESS:
+        case AnnotationActionTypes.RESTORE_FRAME_SUCCESS: {
+            const { data } = action.payload;
 
             return {
                 ...state,
                 player: {
                     ...state.player,
-                    contextImage: {
-                        ...state.player.contextImage,
-                        fetching: false,
-                        data: contextImageData,
+                    frame: {
+                        ...state.player.frame,
+                        data,
                     },
                 },
             };
         }
-        case AnnotationActionTypes.GET_CONTEXT_IMAGE_FAILED: {
+        case AnnotationActionTypes.HIGHLIGHT_CONFLICT: {
+            const { conflict } = action.payload;
+            if (conflict) {
+                const { annotationConflicts: [mainConflict] } = conflict;
+
+                // object may be hidden using annotations filter
+                // it is not guaranteed to be visible
+                const conflictObject = state.annotations.states
+                    .find((_state) => _state.serverID === mainConflict.serverID);
+
+                return {
+                    ...state,
+                    annotations: {
+                        ...state.annotations,
+                        highlightedConflict: conflict,
+                        activatedStateID: conflictObject?.clientID || null,
+                        activatedElementID: null,
+                        activatedAttributeID: null,
+                    },
+                };
+            }
+
             return {
                 ...state,
-                player: {
-                    ...state.player,
-                    contextImage: {
-                        ...state.player.contextImage,
-                        fetching: false,
-                    },
+                annotations: {
+                    ...state.annotations,
+                    highlightedConflict: conflict,
                 },
             };
         }
         case AnnotationActionTypes.CLOSE_JOB:
         case AuthActionTypes.LOGOUT_SUCCESS: {
-            return { ...defaultState };
+            return defaultState;
         }
         default: {
             return state;

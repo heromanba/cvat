@@ -1,10 +1,11 @@
-// Copyright (C) 2020 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
 /// <reference types="cypress" />
 
-export const labelName = `Main task`;
+export const labelName = 'Main task';
 export const taskName = `New annotation task for ${labelName}`;
 export const attrName = `Attr for ${labelName}`;
 export const textDefaultValue = 'Some default value for type Text';
@@ -28,16 +29,16 @@ export const advancedConfigurationParams = {
     frameStep: 2,
 };
 export const multiAttrParams = {
-    additionalAttrName: `Attr 2`,
-    additionalValue: `Attr value 2`,
-    typeAttribute: 'Text',
+    name: 'Attr 2',
+    values: 'Attr value 2',
+    type: 'Text',
 };
 
 it('Prepare to testing', () => {
-    cy.visit('/');
+    cy.visit('/auth/login');
     cy.login();
     cy.get('.cvat-tasks-page').should('exist');
-    let listItems = [];
+    const listItems = [];
     cy.document().then((doc) => {
         const collection = Array.from(doc.querySelectorAll('.cvat-item-task-name'));
         for (let i = 0; i < collection.length; i++) {

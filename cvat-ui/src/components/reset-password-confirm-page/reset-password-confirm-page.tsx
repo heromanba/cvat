@@ -1,4 +1,5 @@
-// Copyright (C) 2020 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
@@ -6,10 +7,10 @@ import React from 'react';
 import { connect } from 'react-redux';
 import Title from 'antd/lib/typography/Title';
 import { Row, Col } from 'antd/lib/grid';
+import Layout from 'antd/lib/layout';
 
-import { CombinedState } from 'reducers/interfaces';
+import { CombinedState } from 'reducers';
 import { resetPasswordAsync } from 'actions/auth-actions';
-
 import ResetPasswordConfirmForm, { ResetPasswordConfirmData } from './reset-password-confirm-form';
 
 interface StateToProps {
@@ -46,23 +47,29 @@ function ResetPasswordPagePageComponent(props: ResetPasswordConfirmPageComponent
 
     const { fetching, onResetPasswordConfirm } = props;
 
+    const { Content } = Layout;
+
     return (
-        <Row justify='center' align='middle'>
-            <Col {...sizes}>
-                <Title level={2}> Change password </Title>
-                <ResetPasswordConfirmForm
-                    fetching={fetching}
-                    onSubmit={(resetPasswordConfirmData: ResetPasswordConfirmData): void => {
-                        onResetPasswordConfirm(
-                            resetPasswordConfirmData.newPassword1,
-                            resetPasswordConfirmData.newPassword2,
-                            resetPasswordConfirmData.uid,
-                            resetPasswordConfirmData.token,
-                        );
-                    }}
-                />
-            </Col>
-        </Row>
+        <Layout>
+            <Content>
+                <Row justify='center' align='middle' style={{ height: '100%' }}>
+                    <Col {...sizes}>
+                        <Title level={2}> Change password </Title>
+                        <ResetPasswordConfirmForm
+                            fetching={fetching}
+                            onSubmit={(resetPasswordConfirmData: ResetPasswordConfirmData): void => {
+                                onResetPasswordConfirm(
+                                    resetPasswordConfirmData.newPassword1,
+                                    resetPasswordConfirmData.newPassword2,
+                                    resetPasswordConfirmData.uid,
+                                    resetPasswordConfirmData.token,
+                                );
+                            }}
+                        />
+                    </Col>
+                </Row>
+            </Content>
+        </Layout>
     );
 }
 

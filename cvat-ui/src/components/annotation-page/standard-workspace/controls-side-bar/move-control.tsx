@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2021 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
 //
 // SPDX-License-Identifier: MIT
 
@@ -6,12 +6,13 @@ import React from 'react';
 import Icon from '@ant-design/icons';
 
 import { MoveIcon } from 'icons';
-import { ActiveControl } from 'reducers/interfaces';
+import { ActiveControl } from 'reducers';
 import { Canvas } from 'cvat-canvas-wrapper';
+import { Canvas3d } from 'cvat-canvas3d-wrapper';
 import CVATTooltip from 'components/common/cvat-tooltip';
 
 export interface Props {
-    canvasInstance: Canvas;
+    canvasInstance: Canvas | Canvas3d;
     activeControl: ActiveControl;
 }
 

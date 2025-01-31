@@ -1,4 +1,5 @@
-// Copyright (C) 2020-2021 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
@@ -8,48 +9,49 @@ import React from 'react';
 import { connect } from 'react-redux';
 import { getApplicationKeyMap } from 'utils/mousetrap-react';
 import { shortcutsActions } from 'actions/shortcuts-actions';
-import { CombinedState } from 'reducers/interfaces';
+import { CombinedState } from 'reducers';
 
 interface StateToProps {
     visible: boolean;
+    jobInstance: any;
 }
 
 interface DispatchToProps {
-    switchShortcutsDialog(): void;
+    switchShortcutsModalVisible(visible: boolean): void;
 }
 
 function mapStateToProps(state: CombinedState): StateToProps {
     const {
         shortcuts: { visibleShortcutsHelp: visible },
+        annotation: {
+            job: { instance: jobInstance },
+        },
     } = state;
 
-    return {
-        visible,
-    };
+    return { visible, jobInstance };
 }
 
 function mapDispatchToProps(dispatch: any): DispatchToProps {
     return {
-        switchShortcutsDialog(): void {
-            dispatch(shortcutsActions.switchShortcutsDialog());
+        switchShortcutsModalVisible(visible: boolean): void {
+            dispatch(shortcutsActions.switchShortcutsModalVisible(visible));
         },
     };
 }
 
-function ShorcutsDialog(props: StateToProps & DispatchToProps): JSX.Element | null {
-    const { visible, switchShortcutsDialog } = props;
+function ShortcutsDialog(props: StateToProps & DispatchToProps): JSX.Element | null {
+    const { visible, switchShortcutsModalVisible } = props;
     const keyMap = getApplicationKeyMap();
 
-    const splitToRows = (data: string[]): JSX.Element[] =>
-        data.map(
-            (item: string, id: number): JSX.Element => (
-                // eslint-disable-next-line react/no-array-index-key
-                <span key={id}>
-                    {item}
-                    <br />
-                </span>
-            ),
-        );
+    const splitToRows = (data: string[]): JSX.Element[] => data.map(
+        (item: string, id: number): JSX.Element => (
+            // eslint-disable-next-line react/no-array-index-key
+            <span key={id}>
+                {item}
+                <br />
+            </span>
+        ),
+    );
 
     const columns = [
         {
@@ -64,40 +66,40 @@ function ShorcutsDialog(props: StateToProps & DispatchToProps): JSX.Element | nu
             render: splitToRows,
         },
         {
-            title: 'Action',
-            dataIndex: 'action',
-            key: 'action',
-            render: splitToRows,
-        },
-        {
             title: 'Description',
             dataIndex: 'description',
             key: 'description',
         },
     ];
 
-    const dataSource = Object.keys(keyMap).map((key: string, id: number) => ({
-        key: id,
-        name: keyMap[key].name || key,
-        description: keyMap[key].description || '',
-        shortcut: keyMap[key].sequences,
-        action: [keyMap[key].action],
-    }));
+    const dataSource = Object.keys(keyMap)
+        .filter((key: string) => (!keyMap[key].nonActive))
+        .map((key: string, id: number) => ({
+            key: id,
+            name: keyMap[key].name || key,
+            description: keyMap[key].description || '',
+            shortcut: keyMap[key].sequences,
+        }));
 
     return (
         <Modal
             title='Active list of shortcuts'
-            visible={visible}
+            open={visible}
             closable={false}
             width={800}
-            onOk={switchShortcutsDialog}
+            onOk={() => switchShortcutsModalVisible(false)}
             cancelButtonProps={{ style: { display: 'none' } }}
             zIndex={1001} /* default antd is 1000 */
             className='cvat-shortcuts-modal-window'
         >
-            <Table dataSource={dataSource} columns={columns} size='small' className='cvat-shortcuts-modal-window-table' />
+            <Table
+                dataSource={dataSource}
+                columns={columns}
+                size='small'
+                className='cvat-shortcuts-modal-window-table'
+            />
         </Modal>
     );
 }
 
-export default connect(mapStateToProps, mapDispatchToProps)(ShorcutsDialog);
+export default connect(mapStateToProps, mapDispatchToProps)(ShortcutsDialog);

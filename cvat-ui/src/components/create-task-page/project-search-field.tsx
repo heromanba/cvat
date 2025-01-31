@@ -1,4 +1,5 @@
-// Copyright (C) 2019-2021 Intel Corporation
+// Copyright (C) 2019-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
@@ -6,14 +7,14 @@ import React, { useEffect, useState } from 'react';
 import Autocomplete from 'antd/lib/auto-complete';
 import { SelectValue } from 'antd/lib/select';
 
-import getCore from 'cvat-core-wrapper';
+import { getCore } from 'cvat-core-wrapper';
 
 const core = getCore();
 
 type Props = {
     value: number | null;
     onSelect: (id: number | null) => void;
-    filter?: (value: Project, index: number, array: Project[]) => unknown
+    filter?: (value: Project, index: number, array: Project[]) => unknown;
 };
 
 type Project = {
@@ -28,15 +29,11 @@ export default function ProjectSearchField(props: Props): JSX.Element {
     const [projects, setProjects] = useState<Project[]>([]);
 
     const handleSearch = (searchValue: string): void => {
-        if (searchValue) {
-            core.projects.searchNames(searchValue).then((result: Project[]) => {
-                if (result) {
-                    setProjects(result);
-                }
-            });
-        } else {
-            setProjects([]);
-        }
+        core.projects.searchNames(searchValue).then((result: Project[]) => {
+            if (result) {
+                setProjects(result);
+            }
+        });
         setSearchPhrase(searchValue);
         onSelect(null);
     };
@@ -83,6 +80,10 @@ export default function ProjectSearchField(props: Props): JSX.Element {
             setSearchPhrase('');
         }
     }, [value]);
+
+    useEffect(() => {
+        setProjects([]);
+    }, [filter]);
 
     return (
         <Autocomplete

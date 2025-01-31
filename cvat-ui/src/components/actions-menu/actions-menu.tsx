@@ -1,136 +1,155 @@
-// Copyright (C) 2020-2021 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
 import './styles.scss';
-import React from 'react';
-import Menu from 'antd/lib/menu';
+import React, { useCallback } from 'react';
 import Modal from 'antd/lib/modal';
-// eslint-disable-next-line import/no-extraneous-dependencies
-import { MenuInfo } from 'rc-menu/lib/interface';
-import DumpSubmenu from './dump-submenu';
-import LoadSubmenu from './load-submenu';
-import ExportSubmenu from './export-submenu';
-import { DimensionType } from '../../reducers/interfaces';
+import { DimensionType, CVATCore } from 'cvat-core-wrapper';
+import Menu, { MenuInfo } from 'components/dropdown-menu';
+import { usePlugins } from 'utils/hooks';
+import { CombinedState } from 'reducers';
+
+type AnnotationFormats = Awaited<ReturnType<CVATCore['server']['formats']>>;
 
 interface Props {
     taskID: number;
+    projectID: number | null;
     taskMode: string;
     bugTracker: string;
-    loaders: any[];
-    dumpers: any[];
-    loadActivity: string | null;
-    dumpActivities: string[] | null;
-    exportActivities: string[] | null;
+    loaders: AnnotationFormats['loaders'];
+    dumpers: AnnotationFormats['dumpers'];
     inferenceIsActive: boolean;
     taskDimension: DimensionType;
-    onClickMenu: (params: MenuInfo, file?: File) => void;
+    onClickMenu: (params: MenuInfo) => void;
 }
 
 export enum Actions {
-    DUMP_TASK_ANNO = 'dump_task_anno',
     LOAD_TASK_ANNO = 'load_task_anno',
     EXPORT_TASK_DATASET = 'export_task_dataset',
     DELETE_TASK = 'delete_task',
     RUN_AUTO_ANNOTATION = 'run_auto_annotation',
     MOVE_TASK_TO_PROJECT = 'move_task_to_project',
     OPEN_BUG_TRACKER = 'open_bug_tracker',
+    BACKUP_TASK = 'backup_task',
+    VIEW_ANALYTICS = 'view_analytics',
+    QUALITY_CONTROL = 'quality_control',
 }
 
-export default function ActionsMenuComponent(props: Props): JSX.Element {
+function ActionsMenuComponent(props: Props): JSX.Element {
     const {
         taskID,
-        taskMode,
+        projectID,
         bugTracker,
         inferenceIsActive,
-        dumpers,
-        loaders,
         onClickMenu,
-        dumpActivities,
-        exportActivities,
-        loadActivity,
-        taskDimension,
     } = props;
 
-    let latestParams: MenuInfo | null = null;
-    function onClickMenuWrapper(params: MenuInfo | null, file?: File): void {
-        const copyParams = params || latestParams;
-        if (!copyParams) {
-            return;
-        }
-        latestParams = copyParams;
+    const plugins = usePlugins((state: CombinedState) => state.plugins.components.taskActions.items, props);
 
-        if (copyParams.keyPath.length === 2) {
-            const [, action] = copyParams.keyPath;
-            if (action === Actions.LOAD_TASK_ANNO) {
-                if (file) {
-                    Modal.confirm({
-                        title: 'Current annotation will be lost',
-                        content: 'You are going to upload new annotations to this task. Continue?',
-                        className: 'cvat-modal-content-load-task-annotation',
-                        onOk: () => {
-                            onClickMenu(copyParams, file);
-                        },
-                        okButtonProps: {
-                            type: 'primary',
-                            danger: true,
-                        },
-                        okText: 'Update',
-                    });
-                }
-            } else {
-                onClickMenu(copyParams);
+    const onClickMenuWrapper = useCallback(
+        (params: MenuInfo) => {
+            if (!params) {
+                return;
             }
-        } else if (copyParams.key === Actions.DELETE_TASK) {
-            Modal.confirm({
-                title: `The task ${taskID} will be deleted`,
-                content: 'All related data (images, annotations) will be lost. Continue?',
-                className: 'cvat-modal-confirm-delete-task',
-                onOk: () => {
-                    onClickMenu(copyParams);
-                },
-                okButtonProps: {
-                    type: 'primary',
-                    danger: true,
-                },
-                okText: 'Delete',
-            });
-        } else {
-            onClickMenu(copyParams);
-        }
+
+            if (params.key === Actions.DELETE_TASK) {
+                Modal.confirm({
+                    title: `The task ${taskID} will be deleted`,
+                    content: 'All related data (images, annotations) will be lost. Continue?',
+                    className: 'cvat-modal-confirm-delete-task',
+                    onOk: () => {
+                        onClickMenu(params);
+                    },
+                    okButtonProps: {
+                        type: 'primary',
+                        danger: true,
+                    },
+                    okText: 'Delete',
+                });
+            } else {
+                onClickMenu(params);
+            }
+        },
+        [taskID],
+    );
+
+    const menuItems: [JSX.Element, number][] = [];
+    menuItems.push([(
+        <Menu.Item key={Actions.LOAD_TASK_ANNO}>Upload annotations</Menu.Item>
+    ), 0]);
+
+    menuItems.push([(
+        <Menu.Item key={Actions.EXPORT_TASK_DATASET}>Export task dataset</Menu.Item>
+    ), 10]);
+
+    if (bugTracker) {
+        menuItems.push([(
+            <Menu.Item key={Actions.OPEN_BUG_TRACKER}>Open bug tracker</Menu.Item>
+        ), 20]);
     }
 
-    return (
-        <Menu selectable={false} className='cvat-actions-menu' onClick={onClickMenuWrapper}>
-            {DumpSubmenu({
-                taskMode,
-                dumpers,
-                dumpActivities,
-                menuKey: Actions.DUMP_TASK_ANNO,
-                taskDimension,
-            })}
-            {LoadSubmenu({
-                loaders,
-                loadActivity,
-                onFileUpload: (file: File): void => {
-                    onClickMenuWrapper(null, file);
-                },
-                menuKey: Actions.LOAD_TASK_ANNO,
-                taskDimension,
-            })}
-            {ExportSubmenu({
-                exporters: dumpers,
-                exportActivities,
-                menuKey: Actions.EXPORT_TASK_DATASET,
-                taskDimension,
-            })}
-            {!!bugTracker && <Menu.Item key={Actions.OPEN_BUG_TRACKER}>Open bug tracker</Menu.Item>}
-            <Menu.Item disabled={inferenceIsActive} key={Actions.RUN_AUTO_ANNOTATION}>
-                Automatic annotation
-            </Menu.Item>
-            <hr />
+    menuItems.push([(
+        <Menu.Item disabled={inferenceIsActive} key={Actions.RUN_AUTO_ANNOTATION}>
+            Automatic annotation
+        </Menu.Item>
+    ), 30]);
+
+    menuItems.push([(
+        <Menu.Item
+            key={Actions.BACKUP_TASK}
+        >
+            Backup Task
+        </Menu.Item>
+    ), 40]);
+
+    menuItems.push([(
+        <Menu.Item
+            key={Actions.VIEW_ANALYTICS}
+        >
+            View analytics
+        </Menu.Item>
+    ), 50]);
+
+    menuItems.push([(
+        <Menu.Item
+            key={Actions.QUALITY_CONTROL}
+        >
+            Quality control
+        </Menu.Item>
+    ), 60]);
+
+    if (projectID === null) {
+        menuItems.push([(
             <Menu.Item key={Actions.MOVE_TASK_TO_PROJECT}>Move to project</Menu.Item>
+        ), 70]);
+    }
+
+    menuItems.push([(
+        <React.Fragment key={Actions.DELETE_TASK}>
+            <Menu.Divider />
             <Menu.Item key={Actions.DELETE_TASK}>Delete</Menu.Item>
+        </React.Fragment>
+    ), 70]);
+
+    menuItems.push(
+        ...plugins.map(({ component: Component, weight }, index) => {
+            const menuItem = Component({ key: index, targetProps: props });
+            return [menuItem, weight] as [JSX.Element, number];
+        }),
+    );
+
+    return (
+        <Menu
+            selectable={false}
+            className='cvat-actions-menu'
+            onClick={onClickMenuWrapper}
+        >
+            { menuItems.sort((menuItem1, menuItem2) => menuItem1[1] - menuItem2[1])
+                .map((menuItem) => menuItem[0]) }
         </Menu>
     );
 }
+
+export default React.memo(ActionsMenuComponent);

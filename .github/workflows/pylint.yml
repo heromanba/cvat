@@ -1,45 +1,33 @@
-name: Linter
+name: Pylint
 on: pull_request
 jobs:
-  PyLint:
-    runs-on: ubuntu-latest
+  Linter:
+    runs-on: ubuntu-22.04 # TODO: update pylint to 3.x and change this back to ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
+      - id: files
+        uses: tj-actions/changed-files@v41.0.0
+        with:
+          files: |
+              **/*.py
 
       - name: Run checks
+        env:
+          PR_FILES_AM: ${{ steps.files.outputs.added_modified }}
+          PR_FILES_RENAMED: ${{ steps.files.outputs.renamed }}
         run: |
-          URL="https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files"
-          PR_FILES=$(curl -s -X GET -G $URL | jq -r '.[] | select(.status != "removed") | .filename')
-          for files in $PR_FILES; do
-            extension="${files##*.}"
-            if [[ $extension == 'py' ]]; then
-              changed_files_pylint+=" ${files}"
-            fi
-          done
+          CHANGED_FILES="${{steps.files.outputs.all_changed_files}}"
 
-          if [[ ! -z ${changed_files_pylint} ]]; then
-            sudo apt-get --no-install-recommends install -y build-essential curl python3-dev python3-pip python3-venv
-            python3 -m venv .env
-            . .env/bin/activate
-            pip install -U pip wheel setuptools
-            pip install pylint-json2html
-            pip install $(egrep "pylint.*" ./cvat/requirements/development.txt)
-            pip install $(egrep "Django.*" ./cvat/requirements/base.txt)
-            mkdir -p pylint_report
+          if [[ ! -z $CHANGED_FILES ]]; then
+            pipx install $(grep "^pylint==" ./dev/requirements.txt)
 
-            echo "Pylint version: "`pylint --version | head -1`
-            echo "The files will be checked: "`echo ${changed_files_pylint}`
-            pylint ${changed_files_pylint} --output-format=json > ./pylint_report/pylint_checks.json || exit_code=`echo $?` || true
-            pylint-json2html -o ./pylint_report/pylint_checks.html ./pylint_report/pylint_checks.json
-            deactivate
-            exit ${exit_code}
+            pipx inject pylint \
+              $(grep "^pylint-.\+==" ./dev/requirements.txt) \
+              $(grep "^django==" ./cvat/requirements/base.txt)
+
+            echo "Pylint version: "$(pylint --version | head -1)
+            echo "The files will be checked: "$(echo $CHANGED_FILES)
+            pylint $CHANGED_FILES
           else
             echo "No files with the \"py\" extension found"
           fi
-
-      - name: Upload artifacts
-        if: failure()
-        uses: actions/upload-artifact@v2
-        with:
-          name: pylint_report
-          path: pylint_report

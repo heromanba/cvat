@@ -1,73 +1,37 @@
-// Copyright (C) 2020 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { connect } from 'react-redux';
-import Title from 'antd/lib/typography/Title';
-import Text from 'antd/lib/typography/Text';
+import { useDispatch, useSelector } from 'react-redux';
 import { Row, Col } from 'antd/lib/grid';
 
 import { requestPasswordResetAsync } from 'actions/auth-actions';
-import { CombinedState } from 'reducers/interfaces';
+import { CombinedState } from 'reducers';
+import SigningLayout, { formSizes } from 'components/signing-common/signing-layout';
 import ResetPasswordForm, { ResetPasswordData } from './reset-password-form';
 
-interface StateToProps {
-    fetching: boolean;
-}
-
-interface DispatchToProps {
-    onResetPassword: typeof requestPasswordResetAsync;
-}
-
-interface ResetPasswordPageComponentProps {
-    fetching: boolean;
-    onResetPassword: (email: string) => void;
-}
-
-function mapStateToProps(state: CombinedState): StateToProps {
-    return {
-        fetching: state.auth.fetching,
-    };
-}
-
-const mapDispatchToProps: DispatchToProps = {
-    onResetPassword: requestPasswordResetAsync,
-};
-
-function ResetPasswordPagePageComponent(props: ResetPasswordPageComponentProps): JSX.Element {
-    const sizes = {
-        xs: { span: 14 },
-        sm: { span: 14 },
-        md: { span: 10 },
-        lg: { span: 4 },
-        xl: { span: 4 },
-    };
-
-    const { fetching, onResetPassword } = props;
+function ResetPasswordPagePageComponent(): JSX.Element {
+    const dispatch = useDispatch();
+    const fetching = useSelector((state: CombinedState) => state.auth.fetching);
 
     return (
-        <Row justify='center' align='middle'>
-            <Col {...sizes}>
-                <Title level={2}> Reset password </Title>
-                <ResetPasswordForm
-                    fetching={fetching}
-                    onSubmit={(resetPasswordData: ResetPasswordData): void => {
-                        onResetPassword(resetPasswordData.email);
-                    }}
-                />
-                <Row justify='start' align='top'>
-                    <Col>
-                        <Text strong>
-                            Go to
-                            <Link to='/auth/login'> login page </Link>
-                        </Text>
+        <SigningLayout>
+            <Col {...formSizes.wrapper}>
+                <Row justify='center'>
+                    <Col {...formSizes.form}>
+                        <ResetPasswordForm
+                            fetching={fetching}
+                            onSubmit={(resetPasswordData: ResetPasswordData): void => {
+                                dispatch(requestPasswordResetAsync(resetPasswordData.email));
+                            }}
+                        />
                     </Col>
                 </Row>
             </Col>
-        </Row>
+        </SigningLayout>
     );
 }
 
-export default connect(mapStateToProps, mapDispatchToProps)(ResetPasswordPagePageComponent);
+export default React.memo(ResetPasswordPagePageComponent);

@@ -1,4 +1,5 @@
-// Copyright (C) 2020-2021 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
@@ -6,51 +7,40 @@ import React from 'react';
 import Icon from '@ant-design/icons';
 
 import { GroupIcon } from 'icons';
-import { Canvas } from 'cvat-canvas-wrapper';
-import { ActiveControl } from 'reducers/interfaces';
 import CVATTooltip from 'components/common/cvat-tooltip';
+import { useSelector } from 'react-redux';
+import { CombinedState } from 'reducers';
+import { Canvas3d } from 'cvat-canvas3d-wrapper';
+import { Canvas } from 'cvat-canvas-wrapper';
 
 export interface Props {
-    canvasInstance: Canvas;
-    activeControl: ActiveControl;
-    switchGroupShortcut: string;
-    resetGroupShortcut: string;
     disabled?: boolean;
-    groupObjects(enabled: boolean): void;
+    dynamicIconProps: Record<string, any>;
+    canvasInstance: Canvas | Canvas3d;
 }
 
 function GroupControl(props: Props): JSX.Element {
     const {
-        switchGroupShortcut, resetGroupShortcut, activeControl, canvasInstance, groupObjects, disabled,
+        disabled,
+        dynamicIconProps,
+        canvasInstance,
     } = props;
 
-    const dynamicIconProps =
-        activeControl === ActiveControl.GROUP ?
-            {
-                className: 'cvat-group-control cvat-active-canvas-control',
-                onClick: (): void => {
-                    canvasInstance.group({ enabled: false });
-                    groupObjects(false);
-                },
-            } :
-            {
-                className: 'cvat-group-control',
-                onClick: (): void => {
-                    canvasInstance.cancel();
-                    canvasInstance.group({ enabled: true });
-                    groupObjects(true);
-                },
-            };
+    const { normalizedKeyMap } = useSelector((state: CombinedState) => state.shortcuts);
 
-    const title = [
-        `Group shapes/tracks ${switchGroupShortcut}. `,
-        `Select and press ${resetGroupShortcut} to reset a group.`,
-    ].join(' ');
+    const title = [];
+    if (canvasInstance instanceof Canvas) {
+        title.push(`Group shapes ${normalizedKeyMap.SWITCH_GROUP_MODE_STANDARD_CONTROLS}`);
+        title.push(`Select and press ${normalizedKeyMap.RESET_GROUP_STANDARD_CONTROLS} to reset a group.`);
+    } else if (canvasInstance instanceof Canvas3d) {
+        title.push(`Group shapes/tracks ${normalizedKeyMap.SWITCH_GROUP_MODE_STANDARD_3D_CONTROLS}`);
+        title.push(`Select and press ${normalizedKeyMap.RESET_GROUP_STANDARD_3D_CONTROLS} to reset a group.`);
+    }
 
     return disabled ? (
         <Icon className='cvat-group-control cvat-disabled-canvas-control' component={GroupIcon} />
     ) : (
-        <CVATTooltip title={title} placement='right'>
+        <CVATTooltip title={title.join(' ')} placement='right'>
             <Icon {...dynamicIconProps} component={GroupIcon} />
         </CVATTooltip>
     );

@@ -1,24 +1,21 @@
-// Copyright (C) 2020-2021 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
 import './styles.scss';
-import React, { Dispatch, useEffect, TransitionEvent } from 'react';
+import React, { Dispatch, TransitionEvent } from 'react';
 import { AnyAction } from 'redux';
 import { connect } from 'react-redux';
 import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
-import Text from 'antd/lib/typography/Text';
 import Tabs from 'antd/lib/tabs';
 import Layout from 'antd/lib/layout';
 
-import { Canvas } from 'cvat-canvas-wrapper';
-import { CombinedState } from 'reducers/interfaces';
+import { CombinedState } from 'reducers';
+import { DimensionType } from 'cvat-core-wrapper';
 import LabelsList from 'components/annotation-page/standard-workspace/objects-side-bar/labels-list';
-import {
-    collapseSidebar as collapseSidebarAction,
-    updateTabContentHeight as updateTabContentHeightAction,
-} from 'actions/annotation-actions';
-import AppearanceBlock, { computeHeight } from 'components/annotation-page/appearance-block';
+import { collapseSidebar as collapseSidebarAction } from 'actions/annotation-actions';
+import AppearanceBlock from 'components/annotation-page/appearance-block';
 import IssuesListComponent from 'components/annotation-page/standard-workspace/objects-side-bar/issues-list';
 
 interface OwnProps {
@@ -27,25 +24,24 @@ interface OwnProps {
 
 interface StateToProps {
     sidebarCollapsed: boolean;
-    canvasInstance: Canvas;
+    jobInstance: any;
 }
 
 interface DispatchToProps {
     collapseSidebar(): void;
-    updateTabContentHeight(): void;
 }
 
 function mapStateToProps(state: CombinedState): StateToProps {
     const {
         annotation: {
             sidebarCollapsed,
-            canvas: { instance: canvasInstance },
+            job: { instance: jobInstance },
         },
     } = state;
 
     return {
         sidebarCollapsed,
-        canvasInstance,
+        jobInstance,
     };
 }
 
@@ -54,39 +50,19 @@ function mapDispatchToProps(dispatch: Dispatch<AnyAction>): DispatchToProps {
         collapseSidebar(): void {
             dispatch(collapseSidebarAction());
         },
-        updateTabContentHeight(): void {
-            const height = computeHeight();
-            dispatch(updateTabContentHeightAction(height));
-        },
     };
 }
 
 function ObjectsSideBar(props: StateToProps & DispatchToProps & OwnProps): JSX.Element {
     const {
-        sidebarCollapsed, canvasInstance, collapseSidebar, updateTabContentHeight, objectsList,
+        sidebarCollapsed, collapseSidebar, objectsList, jobInstance,
     } = props;
-
-    useEffect(() => {
-        const alignTabHeight = (): void => {
-            if (!sidebarCollapsed) {
-                updateTabContentHeight();
-            }
-        };
-
-        window.addEventListener('resize', alignTabHeight);
-        alignTabHeight();
-
-        return () => {
-            window.removeEventListener('resize', alignTabHeight);
-        };
-    }, []);
 
     const collapse = (): void => {
         const [collapser] = window.document.getElementsByClassName('cvat-objects-sidebar');
         const listener = (event: TransitionEvent): void => {
             if (event.target && event.propertyName === 'width' && event.target === collapser) {
-                canvasInstance.fitCanvas();
-                canvasInstance.fit();
+                window.dispatchEvent(new Event('resize'));
                 (collapser as HTMLElement).removeEventListener('transitionend', listener as any);
             }
         };
@@ -98,6 +74,7 @@ function ObjectsSideBar(props: StateToProps & DispatchToProps & OwnProps): JSX.E
         collapseSidebar();
     };
 
+    const is2D = jobInstance ? jobInstance.dimension === DimensionType.DIMENSION_2D : true;
     return (
         <Layout.Sider
             className='cvat-objects-sidebar'
@@ -111,26 +88,27 @@ function ObjectsSideBar(props: StateToProps & DispatchToProps & OwnProps): JSX.E
         >
             {/* eslint-disable-next-line */}
             <span
-                className={`cvat-objects-sidebar-sider
-                    ant-layout-sider-zero-width-trigger
-                    ant-layout-sider-zero-width-trigger-left`}
+                className='cvat-objects-sidebar-sider'
                 onClick={collapse}
             >
                 {sidebarCollapsed ? <MenuFoldOutlined title='Show' /> : <MenuUnfoldOutlined title='Hide' />}
             </span>
 
-            <Tabs type='card' defaultActiveKey='objects' className='cvat-objects-sidebar-tabs'>
-                <Tabs.TabPane tab={<Text strong>Objects</Text>} key='objects'>
-                    {objectsList}
-                </Tabs.TabPane>
-                <Tabs.TabPane forceRender tab={<Text strong>Labels</Text>} key='labels'>
-                    <LabelsList />
-                </Tabs.TabPane>
-                <Tabs.TabPane tab={<Text strong>Issues</Text>} key='issues'>
-                    <IssuesListComponent />
-                </Tabs.TabPane>
-            </Tabs>
-
+            <Tabs
+                type='card'
+                defaultActiveKey='objects'
+                className='cvat-objects-sidebar-tabs'
+                items={[{
+                    key: 'objects',
+                    label: 'Objects',
+                    children: objectsList,
+                }, {
+                    key: 'labels',
+                    label: 'Labels',
+                    forceRender: true,
+                    children: <LabelsList />,
+                }, ...(is2D ? [{ key: 'issues', label: 'Issues', children: <IssuesListComponent /> }] : [])]}
+            />
             {!sidebarCollapsed && <AppearanceBlock />}
         </Layout.Sider>
     );

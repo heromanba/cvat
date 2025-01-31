@@ -1,4 +1,5 @@
-// Copyright (C) 2020-2021 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
@@ -6,10 +7,12 @@ import React from 'react';
 import { connect } from 'react-redux';
 import { RadioChangeEvent } from 'antd/lib/radio';
 
-import { CombinedState, ShapeType, ObjectType } from 'reducers/interfaces';
+import { CombinedState, ShapeType, ObjectType } from 'reducers';
 import { rememberObject } from 'actions/annotation-actions';
 import { Canvas, RectDrawingMethod, CuboidDrawingMethod } from 'cvat-canvas-wrapper';
+import { Canvas3d } from 'cvat-canvas3d-wrapper';
 import DrawShapePopoverComponent from 'components/annotation-page/standard-workspace/controls-side-bar/draw-shape-popover';
+import { Label } from 'cvat-core-wrapper';
 
 interface OwnProps {
     shapeType: ShapeType;
@@ -22,14 +25,16 @@ interface DispatchToProps {
         objectType: ObjectType,
         points?: number,
         rectDrawingMethod?: RectDrawingMethod,
+        cuboidDrawingMethod?: CuboidDrawingMethod,
     ): void;
 }
 
 interface StateToProps {
     normalizedKeyMap: Record<string, string>;
-    canvasInstance: Canvas;
+    canvasInstance: Canvas | Canvas3d;
     shapeType: ShapeType;
     labels: any[];
+    jobInstance: any;
 }
 
 function mapDispatchToProps(dispatch: any): DispatchToProps {
@@ -40,6 +45,7 @@ function mapDispatchToProps(dispatch: any): DispatchToProps {
             objectType: ObjectType,
             points?: number,
             rectDrawingMethod?: RectDrawingMethod,
+            cuboidDrawingMethod?: CuboidDrawingMethod,
         ): void {
             dispatch(
                 rememberObject({
@@ -48,6 +54,7 @@ function mapDispatchToProps(dispatch: any): DispatchToProps {
                     activeLabelID: labelID,
                     activeNumOfPoints: points,
                     activeRectDrawingMethod: rectDrawingMethod,
+                    activeCuboidDrawingMethod: cuboidDrawingMethod,
                 }),
             );
         },
@@ -58,16 +65,17 @@ function mapStateToProps(state: CombinedState, own: OwnProps): StateToProps {
     const {
         annotation: {
             canvas: { instance: canvasInstance },
-            job: { labels },
+            job: { labels, instance: jobInstance },
         },
         shortcuts: { normalizedKeyMap },
     } = state;
 
     return {
         ...own,
-        canvasInstance,
+        canvasInstance: canvasInstance as Canvas,
         labels,
         normalizedKeyMap,
+        jobInstance,
     };
 }
 
@@ -77,17 +85,26 @@ interface State {
     rectDrawingMethod?: RectDrawingMethod;
     cuboidDrawingMethod?: CuboidDrawingMethod;
     numberOfPoints?: number;
-    selectedLabelID: number;
+    selectedLabelID: number | null;
 }
 
 class DrawShapePopoverContainer extends React.PureComponent<Props, State> {
     private minimumPoints = 3;
+    private satisfiedLabels: Label[];
 
     constructor(props: Props) {
         super(props);
 
         const { shapeType } = props;
-        const defaultLabelID = props.labels.length ? props.labels[0].id : null;
+        this.satisfiedLabels = props.labels.filter((label: Label) => {
+            if (shapeType === ShapeType.SKELETON) {
+                return label.type === ShapeType.SKELETON;
+            }
+
+            return ['any', shapeType].includes(label.type);
+        });
+
+        const defaultLabelID = this.satisfiedLabels.length ? this.satisfiedLabels[0].id as number : null;
         const defaultRectDrawingMethod = RectDrawingMethod.CLASSIC;
         const defaultCuboidDrawingMethod = CuboidDrawingMethod.CLASSIC;
         this.state = {
@@ -98,33 +115,46 @@ class DrawShapePopoverContainer extends React.PureComponent<Props, State> {
 
         if (shapeType === ShapeType.POLYGON) {
             this.minimumPoints = 3;
-        }
-        if (shapeType === ShapeType.POLYLINE) {
+        } else if (shapeType === ShapeType.POLYLINE) {
             this.minimumPoints = 2;
-        }
-        if (shapeType === ShapeType.POINTS) {
+        } else if (shapeType === ShapeType.POINTS) {
             this.minimumPoints = 1;
         }
     }
 
     private onDraw(objectType: ObjectType): void {
-        const { canvasInstance, shapeType, onDrawStart } = this.props;
+        const {
+            canvasInstance, shapeType, onDrawStart, labels,
+        } = this.props;
 
         const {
             rectDrawingMethod, cuboidDrawingMethod, numberOfPoints, selectedLabelID,
         } = this.state;
 
         canvasInstance.cancel();
-        canvasInstance.draw({
-            enabled: true,
-            rectDrawingMethod,
-            cuboidDrawingMethod,
-            numberOfPoints,
-            shapeType,
-            crosshair: [ShapeType.RECTANGLE, ShapeType.CUBOID].includes(shapeType),
-        });
 
-        onDrawStart(shapeType, selectedLabelID, objectType, numberOfPoints, rectDrawingMethod);
+        const selectedLabel = labels.find((label) => label.id === selectedLabelID);
+        if (selectedLabel) {
+            canvasInstance.draw({
+                enabled: true,
+                rectDrawingMethod,
+                cuboidDrawingMethod,
+                numberOfPoints,
+                shapeType,
+                skeletonSVG: selectedLabel && selectedLabel.type === ShapeType.SKELETON ?
+                    selectedLabel.structure.svg : undefined,
+                crosshair: [ShapeType.RECTANGLE, ShapeType.CUBOID, ShapeType.ELLIPSE].includes(shapeType),
+            });
+
+            onDrawStart(
+                shapeType,
+                selectedLabel.id,
+                objectType,
+                numberOfPoints,
+                rectDrawingMethod,
+                cuboidDrawingMethod,
+            );
+        }
     }
 
     private onChangeRectDrawingMethod = (event: RadioChangeEvent): void => {
@@ -153,32 +183,28 @@ class DrawShapePopoverContainer extends React.PureComponent<Props, State> {
         });
     };
 
-    private onChangeLabel = (value: any): void => {
-        this.setState({
-            selectedLabelID: value.id,
-        });
+    private onChangeLabel = (value: Label): void => {
+        this.setState({ selectedLabelID: value.id as number });
     };
 
     public render(): JSX.Element {
+        const { satisfiedLabels } = this;
+        const { normalizedKeyMap, shapeType, jobInstance } = this.props;
         const {
             rectDrawingMethod, cuboidDrawingMethod, selectedLabelID, numberOfPoints,
         } = this.state;
 
-        const {
-            normalizedKeyMap, labels, shapeType, canvasInstance,
-        } = this.props;
-
         return (
             <DrawShapePopoverComponent
-                canvasInstance={canvasInstance}
-                labels={labels}
+                jobInstance={jobInstance}
+                labels={satisfiedLabels}
                 shapeType={shapeType}
                 minimumPoints={this.minimumPoints}
                 selectedLabelID={selectedLabelID}
                 numberOfPoints={numberOfPoints}
                 rectDrawingMethod={rectDrawingMethod}
                 cuboidDrawingMethod={cuboidDrawingMethod}
-                repeatShapeShortcut={normalizedKeyMap.SWITCH_DRAW_MODE}
+                repeatShapeShortcut={normalizedKeyMap.SWITCH_DRAW_MODE_STANDARD_CONTROLS}
                 onChangeLabel={this.onChangeLabel}
                 onChangePoints={this.onChangePoints}
                 onChangeRectDrawingMethod={this.onChangeRectDrawingMethod}

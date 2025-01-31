@@ -1,4 +1,5 @@
-// Copyright (C) 2020-2021 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
@@ -14,11 +15,9 @@ import Button from 'antd/lib/button';
 
 import ColorPicker from 'components/annotation-page/standard-workspace/objects-side-bar/color-picker';
 import { ColorizeIcon } from 'icons';
-import { ColorBy, CombinedState } from 'reducers/interfaces';
-import {
-    collapseAppearance as collapseAppearanceAction,
-    updateTabContentHeight as updateTabContentHeightAction,
-} from 'actions/annotation-actions';
+import { ColorBy, CombinedState, Workspace } from 'reducers';
+import { DimensionType } from 'cvat-core-wrapper';
+import { collapseAppearance as collapseAppearanceAction } from 'actions/annotation-actions';
 import {
     changeShapesColorBy as changeShapesColorByAction,
     changeShapesOpacity as changeShapesOpacityAction,
@@ -37,6 +36,8 @@ interface StateToProps {
     outlineColor: string;
     showBitmap: boolean;
     showProjections: boolean;
+    workspace: Workspace;
+    jobInstance: any;
 }
 
 interface DispatchToProps {
@@ -49,24 +50,13 @@ interface DispatchToProps {
     changeShowProjections(event: CheckboxChangeEvent): void;
 }
 
-export function computeHeight(): number {
-    const [sidebar] = window.document.getElementsByClassName('cvat-objects-sidebar');
-    const [appearance] = window.document.getElementsByClassName('cvat-objects-appearance-collapse');
-    const [tabs] = Array.from(window.document.querySelectorAll('.cvat-objects-sidebar-tabs > .ant-tabs-nav'));
-
-    if (sidebar && appearance && tabs) {
-        const maxHeight = sidebar ? sidebar.clientHeight : 0;
-        const appearanceHeight = appearance ? appearance.clientHeight : 0;
-        const tabsHeight = tabs ? tabs.clientHeight : 0;
-        return maxHeight - appearanceHeight - tabsHeight;
-    }
-
-    return 0;
-}
-
 function mapStateToProps(state: CombinedState): StateToProps {
     const {
-        annotation: { appearanceCollapsed },
+        annotation: {
+            appearanceCollapsed,
+            workspace,
+            job: { instance: jobInstance },
+        },
         settings: {
             shapes: {
                 colorBy, opacity, selectedOpacity, outlined, outlineColor, showBitmap, showProjections,
@@ -83,6 +73,8 @@ function mapStateToProps(state: CombinedState): StateToProps {
         outlineColor,
         showBitmap,
         showProjections,
+        workspace,
+        jobInstance,
     };
 }
 
@@ -90,19 +82,6 @@ function mapDispatchToProps(dispatch: Dispatch<AnyAction>): DispatchToProps {
     return {
         collapseAppearance(): void {
             dispatch(collapseAppearanceAction());
-            const [collapser] = window.document.getElementsByClassName('cvat-objects-appearance-collapse');
-
-            if (collapser) {
-                const listener = (event: Event): void => {
-                    if ((event as TransitionEvent).propertyName === 'height') {
-                        const height = computeHeight();
-                        dispatch(updateTabContentHeightAction(height));
-                        collapser.removeEventListener('transitionend', listener);
-                    }
-                };
-
-                collapser.addEventListener('transitionend', listener);
-            }
         },
         changeShapesColorBy(event: RadioChangeEvent): void {
             dispatch(changeShapesColorByAction(event.target.value));
@@ -144,85 +123,92 @@ function AppearanceBlock(props: Props): JSX.Element {
         changeShapesOutlinedBorders,
         changeShowBitmap,
         changeShowProjections,
+        jobInstance,
     } = props;
+
+    const is2D = jobInstance.dimension === DimensionType.DIMENSION_2D;
 
     return (
         <Collapse
             onChange={collapseAppearance}
             activeKey={appearanceCollapsed ? [] : ['appearance']}
             className='cvat-objects-appearance-collapse'
-        >
-            <Collapse.Panel
-                header={(
+            items={[{
+                label: (
                     <Text strong className='cvat-objects-appearance-collapse-header'>
                         Appearance
                     </Text>
-                )}
-                key='appearance'
-            >
-                <div className='cvat-objects-appearance-content'>
-                    <Text type='secondary'>Color by</Text>
-                    <Radio.Group
-                        className='cvat-appearance-color-by-radio-group'
-                        value={colorBy}
-                        onChange={changeShapesColorBy}
-                    >
-                        <Radio.Button value={ColorBy.LABEL}>{ColorBy.LABEL}</Radio.Button>
-                        <Radio.Button value={ColorBy.INSTANCE}>{ColorBy.INSTANCE}</Radio.Button>
-                        <Radio.Button value={ColorBy.GROUP}>{ColorBy.GROUP}</Radio.Button>
-                    </Radio.Group>
-                    <Text type='secondary'>Opacity</Text>
-                    <Slider
-                        className='cvat-appearance-opacity-slider'
-                        onChange={changeShapesOpacity}
-                        value={opacity}
-                        min={0}
-                        max={100}
-                    />
-                    <Text type='secondary'>Selected opacity</Text>
-                    <Slider
-                        className='cvat-appearance-selected-opacity-slider'
-                        onChange={changeSelectedShapesOpacity}
-                        value={selectedOpacity}
-                        min={0}
-                        max={100}
-                    />
-                    <Checkbox
-                        className='cvat-appearance-outlinded-borders-checkbox'
-                        onChange={(event: CheckboxChangeEvent) => {
-                            changeShapesOutlinedBorders(event.target.checked, outlineColor);
-                        }}
-                        checked={outlined}
-                    >
-                        Outlined borders
-                        <ColorPicker
-                            onChange={(color) => changeShapesOutlinedBorders(outlined, color)}
-                            value={outlineColor}
-                            placement='top'
-                            resetVisible={false}
+                ),
+                key: 'appearance',
+                children: (
+                    <div className='cvat-objects-appearance-content'>
+                        <Text type='secondary'>Color by</Text>
+                        <Radio.Group
+                            className='cvat-appearance-color-by-radio-group'
+                            value={colorBy}
+                            onChange={changeShapesColorBy}
                         >
-                            <Button className='cvat-appearance-outlined-borders-button' type='link' shape='circle'>
-                                <ColorizeIcon />
-                            </Button>
-                        </ColorPicker>
-                    </Checkbox>
-                    <Checkbox
-                        className='cvat-appearance-bitmap-checkbox'
-                        onChange={changeShowBitmap}
-                        checked={showBitmap}
-                    >
-                        Show bitmap
-                    </Checkbox>
-                    <Checkbox
-                        className='cvat-appearance-cuboid-projections-checkbox'
-                        onChange={changeShowProjections}
-                        checked={showProjections}
-                    >
-                        Show projections
-                    </Checkbox>
-                </div>
-            </Collapse.Panel>
-        </Collapse>
+                            <Radio.Button value={ColorBy.LABEL}>{ColorBy.LABEL}</Radio.Button>
+                            <Radio.Button value={ColorBy.INSTANCE}>{ColorBy.INSTANCE}</Radio.Button>
+                            <Radio.Button value={ColorBy.GROUP}>{ColorBy.GROUP}</Radio.Button>
+                        </Radio.Group>
+                        <Text type='secondary'>Opacity</Text>
+                        <Slider
+                            className='cvat-appearance-opacity-slider'
+                            onChange={changeShapesOpacity}
+                            value={opacity}
+                            min={0}
+                            max={100}
+                        />
+                        <Text type='secondary'>Selected opacity</Text>
+                        <Slider
+                            className='cvat-appearance-selected-opacity-slider'
+                            onChange={changeSelectedShapesOpacity}
+                            value={selectedOpacity}
+                            min={0}
+                            max={100}
+                        />
+                        <Checkbox
+                            className='cvat-appearance-outlinded-borders-checkbox'
+                            onChange={(event: CheckboxChangeEvent) => {
+                                changeShapesOutlinedBorders(event.target.checked, outlineColor);
+                            }}
+                            checked={outlined}
+                        >
+                            Outlined borders
+                            <ColorPicker
+                                onChange={(color) => changeShapesOutlinedBorders(outlined, color)}
+                                value={outlineColor}
+                                placement='top'
+                                resetVisible={false}
+                            >
+                                <Button className='cvat-appearance-outlined-borders-button' type='link' shape='circle'>
+                                    <ColorizeIcon />
+                                </Button>
+                            </ColorPicker>
+                        </Checkbox>
+                        {is2D && (
+                            <Checkbox
+                                className='cvat-appearance-bitmap-checkbox'
+                                onChange={changeShowBitmap}
+                                checked={showBitmap}
+                            >
+                                Show bitmap
+                            </Checkbox>
+                        )}
+                        {is2D && (
+                            <Checkbox
+                                className='cvat-appearance-cuboid-projections-checkbox'
+                                onChange={changeShowProjections}
+                                checked={showProjections}
+                            >
+                                Show projections
+                            </Checkbox>
+                        )}
+                    </div>
+                ),
+            }]}
+        />
     );
 }
 

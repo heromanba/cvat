@@ -1,4 +1,5 @@
-// Copyright (C) 2019-2020 Intel Corporation
+// Copyright (C) 2019-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
@@ -47,11 +48,11 @@ export class ZoomHandlerImpl implements ZoomHandler {
     private getSelectionBox(
         event: MouseEvent,
     ): {
-        x: number;
-        y: number;
-        width: number;
-        height: number;
-    } {
+            x: number;
+            y: number;
+            width: number;
+            height: number;
+        } {
         const point = translateToSVG((this.canvas.node as any) as SVGSVGElement, [event.clientX, event.clientY]);
         const stopSelectionPoint = {
             x: point[0],
@@ -96,7 +97,7 @@ export class ZoomHandlerImpl implements ZoomHandler {
     }
 
     public constructor(
-        onZoomRegion: (x: number, y: number, width: number, height: number) => void,
+        onZoomRegion: ZoomHandlerImpl['onZoomRegion'],
         canvas: SVG.Container,
         geometry: Geometry,
     ) {

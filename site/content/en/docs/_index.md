@@ -1,6 +1,7 @@
 ---
-title: 'CVAT Documentation'
+title: 'Documentation'
 linkTitle: 'Documentation'
+description: 'Welcome to the documentation of Computer Vision Annotation Tool.'
 no_list: true
 menu:
   main:
@@ -8,51 +9,58 @@ menu:
 ---
 
 CVAT is a free, online, interactive video and image annotation tool for computer vision.
-It is being developed and used by Intel to annotate millions of objects with different properties.
+It is being developed and used by CVAT.ai to annotate millions of objects with different properties.
 Many UI and UX decisions are based on feedbacks from professional data annotation team.
-Try it online [cvat.org](https://cvat.org).
+Try it online [app.cvat.ai](https://app.cvat.ai).
+
+Our documentation provides information for annotators, AI researchers, system administrators,
+and developers.
+The documentation is divided into three sections, and each section is divided into
+subsections `basic` and `advanced`.
 
 <section id="docs">
 
-{{< blocks/section color="docs" >}}
+{{< blocks/section color="docs" type="row" >}}
 
-{{% blocks/feature icon="fa-server" title="[Installation Guide](/docs/for-users/installation/)" %}}
+{{% blocks/feature icon="fa-sign-in-alt" title="[Getting started](/docs/getting_started/)" %}}
 
-CVAT installation guide for different operating systems.
-
-{{% /blocks/feature %}}
-
-{{% blocks/feature icon="fa-book" title="[User's Guide](/docs/for-users/user-guide/)" %}}
-
-This multipage document contains information on how to work with the CVAT user interface.
+Basic information and sections needed for a quick start.
 
 {{% /blocks/feature %}}
 
-{{% blocks/feature icon="fa-question" title="[FAQ](/docs/for-users/faq/)" %}}
+{{% blocks/feature icon="fa-question" title="[FAQ](/docs/faq/)" %}}
 
 Answers to frequently asked questions.
 
 {{% /blocks/feature %}}
 
-<!--lint disable maximum-line-length-->
-
-{{% blocks/feature icon="fa-magic" title="[Installation Auto Annotation](/docs/for-users/installation_automatic_annotation/)" %}}
-
-This page provides information about the installation of components needed for semi-automatic and automatic annotation.
-
-{{% /blocks/feature %}}
-
-{{% blocks/feature icon="fa-terminal" title="[For Developers](/docs/for-developers/)" %}}
-
-This section contains documents for system administrators, AI researchers and any other advanced users.
-
-{{% /blocks/feature %}}
-
-{{% blocks/feature icon="fab fa-github" title="[GitHub Repository](https://github.com/openvinotoolkit/cvat)" %}}
+{{% blocks/feature icon="fab fa-github" title="[GitHub Repository](https://github.com/cvat-ai/cvat)" %}}
 
 Computer Vision Annotation Tool GitHub repository.
 
 {{% /blocks/feature %}}
+
+
+<!--lint disable maximum-line-length-->
+
+{{% blocks/feature icon="fa-book" title="[Manual](/docs/manual/)" %}}
+
+This section contains documents for CVAT simple and advanced users.
+
+{{% /blocks/feature %}}
+
+{{% blocks/feature icon="fa-server" title="[Administration](/docs/administration/)" %}}
+
+This section contains documents for system administrators.
+
+{{% /blocks/feature %}}
+
+{{% blocks/feature icon="fa-terminal" title="[Contributing](/docs/contributing/)" %}}
+
+This section contains documents for developers.
+
+{{% /blocks/feature %}}
+
 
 {{< /blocks/section >}}
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2021 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
 //
 // SPDX-License-Identifier: MIT
 
@@ -7,7 +7,8 @@ import Popover from 'antd/lib/popover';
 import Icon from '@ant-design/icons';
 
 import { Canvas } from 'cvat-canvas-wrapper';
-import { ShapeType } from 'reducers/interfaces';
+import { Canvas3d } from 'cvat-canvas3d-wrapper';
+import { ShapeType } from 'reducers';
 
 import { CubeIcon } from 'icons';
 
@@ -15,38 +16,34 @@ import DrawShapePopoverContainer from 'containers/annotation-page/standard-works
 import withVisibilityHandling from './handle-popover-visibility';
 
 export interface Props {
-    canvasInstance: Canvas;
+    canvasInstance: Canvas | Canvas3d;
     isDrawing: boolean;
     disabled?: boolean;
 }
 
 const CustomPopover = withVisibilityHandling(Popover, 'draw-cuboid');
-function DrawPolygonControl(props: Props): JSX.Element {
+function DrawCuboidControl(props: Props): JSX.Element {
     const { canvasInstance, isDrawing, disabled } = props;
-    const dynamcPopoverPros = isDrawing ?
-        {
-            overlayStyle: {
-                display: 'none',
-            },
-        } :
-        {};
+    const dynamicPopoverProps = isDrawing ? {
+        overlayStyle: {
+            display: 'none',
+        },
+    } : {};
 
-    const dynamicIconProps = isDrawing ?
-        {
-            className: 'cvat-draw-cuboid-control cvat-active-canvas-control',
-            onClick: (): void => {
-                canvasInstance.draw({ enabled: false });
-            },
-        } :
-        {
-            className: 'cvat-draw-cuboid-control',
-        };
+    const dynamicIconProps = isDrawing ? {
+        className: 'cvat-draw-cuboid-control cvat-active-canvas-control',
+        onClick: (): void => {
+            canvasInstance.draw({ enabled: false });
+        },
+    } : {
+        className: 'cvat-draw-cuboid-control',
+    };
 
     return disabled ? (
         <Icon className='cvat-draw-cuboid-control cvat-disabled-canvas-control' component={CubeIcon} />
     ) : (
         <CustomPopover
-            {...dynamcPopoverPros}
+            {...dynamicPopoverProps}
             overlayClassName='cvat-draw-shape-popover'
             placement='right'
             content={<DrawShapePopoverContainer shapeType={ShapeType.CUBOID} />}
@@ -56,4 +53,4 @@ function DrawPolygonControl(props: Props): JSX.Element {
     );
 }
 
-export default React.memo(DrawPolygonControl);
+export default React.memo(DrawCuboidControl);

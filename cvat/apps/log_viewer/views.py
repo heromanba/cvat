@@ -1,31 +1,25 @@
-# Copyright (C) 2018-2020 Intel Corporation
+# Copyright (C) 2018-2022 Intel Corporation
 #
 # SPDX-License-Identifier: MIT
 
-import os
-
-from revproxy.views import ProxyView
-from django.utils.decorators import method_decorator
 from django.conf import settings
-from rules.contrib.views import PermissionRequiredMixin
+from django.http import HttpResponsePermanentRedirect
+from drf_spectacular.utils import extend_schema
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
-from cvat.apps.authentication.decorators import login_required
 
-@method_decorator(login_required, name='dispatch')
-class LogViewerProxy(PermissionRequiredMixin, ProxyView):
-    permission_required = settings.RESTRICTIONS['analytics_access']
+@extend_schema(exclude=True)
+class LogViewerAccessViewSet(viewsets.ViewSet):
+    serializer_class = None
 
-    upstream = 'http://{}:{}'.format(os.getenv('DJANGO_LOG_VIEWER_HOST'),
-        os.getenv('DJANGO_LOG_VIEWER_PORT'))
-    add_remote_user = True
+    def list(self, request):
+        return Response(status=status.HTTP_200_OK)
 
-    def get_request_headers(self):
-        headers = super().get_request_headers()
-        headers['X-Forwarded-User'] = headers['REMOTE_USER']
-
-        return headers
-
-    # Returns True if the user has any of the specified permissions
-    def has_permission(self):
-        perms = self.get_permission_required()
-        return any(self.request.user.has_perm(perm) for perm in perms)
+    # All log view requests are proxied by Traefik in production mode which is not available in debug mode,
+    # In order not to duplicate settings, let's just redirect to the default page in debug mode
+    @action(detail=False, url_path="dashboards")
+    def redirect(self, request):
+        if settings.DEBUG:
+            return HttpResponsePermanentRedirect("http://localhost:3001/dashboards")

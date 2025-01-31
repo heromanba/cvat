@@ -1,21 +1,28 @@
-// Copyright (C) 2020 Intel Corporation
+// Copyright (C) 2020-2022 Intel Corporation
+// Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
 
-@import '../../base.scss';
+@import 'base';
 
 .cvat-task-details-wrapper {
     overflow-y: auto;
-    height: 90%;
+    height: 100%;
     width: 100%;
+    padding-bottom: $grid-unit-size * 2;
 
     .cvat-task-details {
         width: 100%;
         height: auto;
         border: 1px solid $border-color-1;
-        border-radius: 3px;
+        border-radius: $border-radius-base;
         padding: 20px;
         background: $background-color-1;
+
+        .cvat-task-name {
+            margin: 0;
+            margin-bottom: $grid-unit-size * 2;
+        }
 
         .cvat-task-details-user-block {
             > div:nth-child(2) > span {
@@ -26,59 +33,55 @@
         > div:nth-child(2) {
             > div:nth-child(2) {
                 padding-left: 20px;
-
-                > div:not(:first-child) {
-                    margin-top: 20px;
-                }
             }
         }
 
         .cvat-project-search-field {
             width: $grid-unit-size * 20;
         }
+
+        .cvat-task-item-loading-preview,
+        .cvat-task-item-empty-preview {
+            @extend .cvat-base-preview;
+
+            height: $grid-unit-size * 18;
+            font-size: $grid-unit-size * 10;
+            margin-bottom: $grid-unit-size * 3;
+        }
+
+        .cvat-task-item-preview {
+            width: 100%;
+            object-fit: contain;
+            max-height: $grid-unit-size * 18;
+        }
     }
 
-    > div > div > div > button {
+    .cvat-task-details:has(.cvat-constructor-viewer-new-item) {
+        .cvat-task-item-preview {
+            max-height: $grid-unit-size * 40;
+        }
+    }
+
+    .cvat-task-page-actions-button {
         display: flex;
         align-items: center;
+        line-height: 14px;
     }
 }
 
-.cvat-dataset-repository-url {
-    > a {
-        margin-right: 10px;
-    }
+.cvat-task-page {
+    position: relative;
+    height: 100%;
 
-    > .ant-tag-red {
-        user-select: none;
-        opacity: 0.4;
-
-        &:hover {
-            opacity: 0.8;
-        }
-
-        &:active {
-            opacity: 1;
-        }
-    }
-
-    > .ant-tag > span[role='img'] {
-        margin-right: 5px;
+    .ant-empty {
+        margin: $grid-unit-size * 8;
     }
 }
 
 .cvat-task-job-list {
     width: 100%;
     height: auto;
-    border: 1px solid $border-color-1;
-    border-radius: 3px;
-    margin-top: 20px;
-    padding: 20px;
-    background: $background-color-1;
-
-    > div:nth-child(1) > div:nth-child(1) {
-        display: flex;
-    }
+    margin-top: $grid-unit-size * 2;
 }
 
 .cvat-task-top-bar {
@@ -88,9 +91,7 @@
 .cvat-task-preview-wrapper {
     overflow: hidden;
     margin-bottom: 20px;
-    width: $grid-unit-size * 32;
     height: $grid-unit-size * 18;
-    display: table-cell;
     text-align: center;
     vertical-align: middle;
     background-color: $background-color-2;
@@ -98,11 +99,19 @@
 
 .cvat-task-parameters {
     margin-top: $grid-unit-size * 2;
-    width: $grid-unit-size * 32;
 }
 
 .cvat-open-bug-tracker-button {
-    margin-left: 15px;
+    margin-top: $grid-unit-size;
+}
+
+.cvat-issue-tracker {
+    margin-top: $grid-unit-size * 2;
+    margin-bottom: $grid-unit-size * 2;
+}
+
+.cvat-issue-tracker-value {
+    margin-left: $grid-unit-size;
 }
 
 .ant-typography.cvat-jobs-header {
@@ -111,22 +120,9 @@
     font-weight: bold;
 }
 
-/* Pagination in center */
-.cvat-task-jobs-table > div > div {
-    text-align: center;
-
-    > .ant-table-pagination.ant-pagination {
-        float: none;
-    }
-}
-
-.cvat-job-item-status {
-    .cvat-job-annotation-color,
-    .cvat-job-validation-color,
-    .cvat-job-completed-color {
-        span {
-            margin-left: $grid-unit-size;
-        }
+.cvat-job-item-stage {
+    .ant-select {
+        margin-right: $grid-unit-size;
     }
 }
 
@@ -144,14 +140,16 @@
     }
 }
 
-.cvat-job-completed-color {
-    color: $completed-progress-color;
-}
+.cvat-jobs-list-filters-wrapper {
+    display: flex;
+    justify-content: space-between;
+    margin-top: $grid-unit-size * 2;
 
-.cvat-job-validation-color {
-    color: $inprogress-progress-color;
-}
+    button:not(:last-child) {
+        margin-right: $grid-unit-size;
+    }
 
-.cvat-job-annotation-color {
-    color: $pending-progress-color;
+    .cvat-resource-page-filters {
+        margin-right: $grid-unit-size * 4;
+    }
 }

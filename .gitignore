@@ -4,13 +4,11 @@
 /share/
 /static/
 /db.sqlite3
-/.env
 /keys
 /logs
 /profiles
 /ssh/*
 !/ssh/README.md
-node_modules
 /Mask_RCNN/
 /letsencrypt-webroot/
 
@@ -20,9 +18,13 @@ __pycache__
 *.pyc
 ._*
 .coverage
+.husky/
+.python-version
+/tmp*cvat/
+/temp*/
 
-# Ignore development npm files
-node_modules
+# Ignore generated test files
+docker-compose.tests.yml
 
 # Ignore npm logs file
 npm-debug.log*
@@ -47,3 +49,24 @@ yarn-error.log*
 /site/resources/
 /site/node_modules/
 /site/tech-doc-hugo
+/site/.hugo_build.lock
+
+# Ignore all the installed packages
+node_modules
+/*env*/
+/.*env*
+
+# Ignore all js dists
+cvat-data/dist
+cvat-core/dist
+cvat-canvas/dist
+cvat-canvas3d/dist
+cvat-ui/dist
+
+# produced by npm run docs in cvat-core
+cvat-core/docs
+# produced by prepare in the root package.json script
+.husky
+
+# produced by cvat/apps/iam/rules/tests/generate_tests.py
+/cvat/apps/*/rules/*_test.gen.rego
